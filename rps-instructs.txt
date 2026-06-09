@@ -1,0 +1,760 @@
+Integration and Testing RPS APIs on QA
+
+
+
+By Priyanka Bakthavalsalan (Deactivated)
+
+9 min
+
+Listen
+
+569
+
+
+6
+Add Workflow
+Add Workflow
+Numbered Headings
+Numbered Headings
+Smart Designer
+Smart Designer
+How to integrate in raptor application and do local testing?
+Profile Attributes
+
+Steps to Test
+
+Check if the metadata for the attributes your using are available on staging. Following are the ways to verify the same.
+
+Using the Portal:
+
+https://www.msmaster.qa.paypal.com/campaigninsights/segments/attributes. Search for the attribute you want to use and make sure the same is available.
+
+If the attribute is not available, please reach out to DL-PP-rps-platform-dev for help.
+
+Update Attributes API:
+
+If you intend to update attributes into RPS using the API, following are the API details for the same:
+
+Update Attributes
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/profile-attributes
+HEADERS: Content-Type : application/json
+REQUEST:
+{
+  "cust_id": "12047829602241376831", //Account number of the user
+  "profile_attributes": [
+    {
+      "long_name": "account_creation_channel", //name of the attribute.
+      "value": "TESLA"
+    },
+    {
+      "long_name": "acct_cre_dt",
+      "value": "2016-12-10"
+    }
+  ]
+}
+RESPONSE: [STATUS CODE: 200 for successful Update and 400 for a validation error]
+NOTE: If you need help with getting the name of the attribute you should pass in the above request, please reach out to our team. The same also maps to the "System Name" in the below section on Segmentation Portal. Double click and copy the system name from the portal
+
+
+ 
+
+Retrieve the attributes associated with an identity.
+
+If you want to retrieve an attribute on live from our system, using the following end point:
+
+Get Attributes
+
+
+
+METHOD: GET
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/profile-attributes?id_type=ACCOUNT_NUMBER&id_value=12047829602241376831&filter_attrs=cause_recommendation
+[NOTE: pass the name of the attribute against the query param to retrieve the same]
+HEADERS: Content-Type : application/json
+RESPONSE: [STATUS CODE: 200 / 404] 
+{
+    "cust_id": "12047829602241376831",
+    "profile_attributes": [
+        {
+            "short_name": "cr",
+            "long_name": "cause_recommendation",
+            "value": [
+                "C1",
+                "C2"
+            ],
+            "timestamp": 1507336654077
+        }
+    ],
+    "pid": "b9d3b51b-6ace-4886-ae03-8416311f6d3d"
+}
+The request for encrypted account number works. You can now use above command by using id_type=ENCRYPTED_ACCOUNT_NUMBER and id_value as the encrypted value.
+
+ 
+
+Postman collection with Sample Calls.
+
+Profile Attribute Online RPS APIs v2Profil_Attribute_Online_RPS_APIs_v2
+
+Some additional details:Customer Profile Attributes
+
+Link to check metadata of existing attributes on PRODUCTION: https://internal.paypalinc.com/campaigninsights/attributes
+
+Update attributes of LIST/MAP data type using kafka.
+
+We currently do not support direct API updates for MAP/LIST based attributes, hence the following steps can be followed for testing updation of such attributes on staging:
+
+Install kafka locally. Follow the steps mentioned here: https://kafka.apache.org/quickstart
+
+Once installed go into the folder "kafka_2.11-0.10.1.0"
+
+command to publish a message;
+
+
+
+bin/kafka-console-producer.sh --broker-list gc-mskafka1002.pp-devqa-ms-thirdparty.us-central1.gcp.dev.paypalinc.com:9092 --topic consumer.rps.profile-slca
+//the broker (Eg: <gc-mskafka1002.pp-devqa-ms-thirdparty.us-central1.gcp.dev.paypalinc.com>) to be passed in the above command can be picked from : https://10.176.146.162:8443/kafkamon/cluster?selectedCluster=GCPIntegrationCluster. Preferable to pick the master broker
+Sample message to publish:
+
+
+
+//Sample message:
+{"type":"customerid","id":"functest","values":[{"type":"AttributeUpdateV2","timestamp":1498774621207,"values":{"cust_id":"168918769392","profile_attributes":[{"long_name":"cntr_merc_paypal_shoppers_percentage","value":{"1e0b3556-ff9c-47c1-9f74-19f7356d0d4a":60,"1da105ad-3e21-4dde-ba58-554b3d708849":75,"29923693-6647-4348-a58b-71bbbb9f18f6 ":40}}],"pid":null}}]}
+Note:
+You can replace the following in the above message to test updating your attribute:
+1. "cust_id":"168918769392" --> replace account number
+2. "long_name" --> use the long_name relevant to your application. Also, provide the appropriate value for the attribute against the "value" field.
+NOTE :publish the same message 2-3 times so the publishing goes through successfully. Once, published you can use the GET API to read the data and verify.
+
+Update attributes via kafka
+
+Attribute Update using Kafka
+
+Customer Lists
+
+Steps to Test :
+
+Create a Customer List
+
+Using the Portal:
+
+Link : https://www.msmaster.qa.paypal.com/campaigninsights/lists/view
+
+Screen Shot:
+
+
+
+
+
+Once a List is Created the customer list id and code are as shown below. These would be used for subsequent segment creation or add/remove users from a list:
+
+
+Using the Customer List Definition API directly. (Using the tool would be easier)
+
+Create Customer List Definition API
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/customer-lists
+HEADERS: Content-Type : application/json
+REQUEST:
+{
+  "code": "NA_CA_20170403_TEST_DEMO",
+  "description": "TEST LIST",
+  "countries": [
+    "CA"
+  ],
+  "regions": [
+    "NA"
+  ],
+  "type": "ADHOC",
+  "category": "CONSUMER",
+  "created_by": "dev",
+  "expiry_ts": "1495477378304",
+  "lifecycle_status": "LIVE"
+}
+RESPONSE: [STATUS CODE: 200]
+{
+  "id": "CL-6468413433652722168",
+  "code": "NA_CA_20170403_TEST_DEMO",
+  "description": "TEST LIST",
+  "type": "ADHOC",
+  "category": "CONSUMER",
+  "create_ts": "1506044863355",
+  "update_ts": "1506044863355",
+  "member_count": 0,
+  "countries": [
+    "CA"
+  ],
+  "regions": [
+    "NA"
+  ],
+  "created_by": "dev",
+  "expiry_ts": "1495477378304",
+  "lifecycle_status": "LIVE"
+}
+NOTE: Currently we have a limitation that the lists created in production using the tool might not have the same name and id in the QA environment. Hence, you would have to recreate similar lists on staging and test using those.
+
+Add/Remove members from a Customer list
+
+Using APIs mentioned below (NOTE: On staging we do not support bulk load of users and hence you can simulate adding or removing users from a list using the APIs).
+
+API to add a user to a list.
+
+Add a user to a Customer List
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/customer-lists/CL-6465007365187988655/members  (Note: use the customer list for your list in the url)
+HEADERS: Content-Type : application/json
+REQUEST:
+{
+        "id_type": "ACCOUNT_NUMBER",
+        "id_value": "1608754337057906945" //account number of the user to be added
+}
+RESPONSE: [STATUS CODE: 200]
+Note: If you receive an error stating "Customer Id Not Found", then please add the user into RPS by setting an attribute for the user. Use APIs defined here to update any attribute for the user: Integration and Testing RPS APIs on QA#UpdateAttributesAPI:
+
+API to remove a user from a list.
+
+Remove a user from a customer List
+
+
+
+METHOD: DELETE
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/customer-lists/CL-6465007365187988655/members  (Note: use the customer list for your list in the url)
+HEADERS: Content-Type : application/json
+REQUEST:
+{
+        "id_type": "ACCOUNT_NUMBER",
+        "id_value": "1608754337057906945"
+}
+RESPONSE: [STATUS CODE: 204]
+Postman collection with Sample Calls.
+
+For Customer List Definition Related APIs
+
+CustomerList_new.postman_collection.json
+
+For Customer List Membership Related APIs
+
+CustomerListMembership.postman_collection.json
+
+Some additional details: Customer List
+
+
+Dynamic Segments
+
+Steps to Test :
+
+Create a Dynamic Segment
+
+Using the Portal:
+
+Link : https://www.msmaster.qa.paypal.com/campaigninsights/lists/view
+
+Screen Shot:
+
+
+
+
+
+Once a Segment is Created the  segment code is as shown below.This  would be used for subsequent segment evaluation:
+
+
+Video around segment creation can be found here :
+
+https://paypal-my.sharepoint.com/:f:/p/sbhagatwala/EnpQjo9c7XdBpv5F7__g2I4BrcNnxRo8HSo5N_Fb-Easzw?e=5%3a88pM6f&at=9
+
+NOTE: Currently we have a limitaion that the segments created in production using the tool might not have the same name and id in the QA environment. Hence, you would have to recreate similar segments on staging and test using those.
+
+API to evaluate if a user belong to a dynamic segment:
+
+Generic API to evaluate both dynamic segments and customer lists.
+
+This is a generic evaluate end point, where you can pass either customer list codes or dynamic segment codes and
+
+evaluate if a given user is a part of the same. This API gives you the capability to use the same API to evaluate against
+
+segments or lists, without having to differentiate the same.
+
+Generic Evaluate End Point
+
+
+
+METHOD: POST
+HEADERS: Content-Type : application/json
+URL: https://msmaster.qa.paypal.com:20068/v1/dynsegmentationserv/evaluate 
+REQUEST:
+{
+  "id_type": "ACCOUNT_NUMBER",
+  "id": "1617082364825547238",
+  "segment_codes": [
+    "acct_creation_channel_hermes",
+    "NA_20170922_Ravi_Test_DS",
+    "NA_20170922_Ravi_Test_CL",
+    "DUMMY"
+  ]
+}
+NOTE: For encrypted account number based evaluation use id_type as ENCRYPTED_ACCOUNT_NUMBER 
+	  For cookie id or fpti id based evaluation use id_type as COOKIE_ID
+RESPONSE: [STATUS CODE: 200]
+{
+  "id_type": "ACCOUNT_NUMBER",
+  "id": "1617082364825547238",
+  "segment_codes": [
+    "NA_20170922_Ravi_Test_DS",
+    "NA_20170922_Ravi_Test_CL"
+  ]
+}
+Postman collection with Sample Calls.
+
+dynsegments_evaluate_postman_collection .json
+
+Some additional details:Dynamic Segments
+
+Identity Mappings
+
+Retrieve user id from multiple identities.
+
+The API is used to identify the user account number linked to a given set of identities.
+
+Currently the API accepts COOKIE_ID and IP.
+
+More details around the APIs and testing are documented here: Identity Mapping Enhancements in RPS#TestingonStaging
+
+Update Id mappings on staging : [DEPRECATED]
+
+Legacy ID Mapping APIs in RPS: We currently support association of cookie/fpti ids with account numbers in RPS. In production, we have pipelines set that update these id mappings constantly. These data updates only happen in the LIVE environment. However, on staging if you intend to associate an identity and retrieve details of a user based on other identities , following are the APIs you can use.
+
+Updaye Identity Mappings on Staging
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/profile?clientid=rps
+HEADERS: Content-Type : application/json
+REQUEST:
+{
+  "keys": [
+    {
+      "name" : "pu",
+      "value" : "2235611535848528047"
+    },
+    {
+      "name" : "fpti",
+      "value" : "djsgfjkedsyuif6we86ngjgdss"
+    }
+  ]
+}
+RESPONSE: [STATUS CODE: 200/201]
+Retrieve the account number given a cookie id [DEPRECATED]
+
+
+Retrieve User linked to an Identity
+
+
+
+METHOD: GET
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/profile/identity?id_type=COOKIE_ID&id_value=jdsykylsidyiiteisytilysifktgdsu
+HEADERS: Content-Type : application/json
+ RESPONSE: [STATUS CODE: 200/404]
+{
+    "account_number": "2235611535848528047"
+} 
+Sample Postman Collection:
+
+id_mapCollection
+
+Update identities using kafka.
+
+To publish id mappings with score:
+
+Install kafka locally. Follow the steps mentioned here: https://kafka.apache.org/quickstart
+
+Once installed go into the folder "kafka_2.11-0.10.1.0"
+
+command to publish a message;
+
+
+
+bin/kafka-console-producer.sh --broker-list gc-mskafka1004.pp-devqa-ms-thirdparty.us-central1.gcp.dev.paypalinc.com:9092,gc-mskafka1007.pp-devcos-kafka-qa.us-central1.gcp.dev.paypalinc.com:9092,gc-mskafka1008.pp-devcos-kafka-qa.us-central1.gcp.dev.paypalinc.com:9092,gc-mskafka1009.pp-devcos-kafka-qa.us-central1.gcp.dev.paypalinc.com:9092,gc-mskafka1006.pp-devcos-kafka-qa.us-central1.gcp.dev.paypalinc.com:9092, gc-mskafka1005.pp-devcos-kafka-qa.us-central1.gcp.dev.paypalinc.com:9092 --topic consumer.rps.profile
+//the broker (Eg: <gc-mskafka1002.pp-devqa-ms-thirdparty.us-central1.gcp.dev.paypalinc.com>) to be passed in the above command can be picked from : https://10.176.146.162:8443/kafkamon/cluster?selectedCluster=GCPIntegrationCluster. Preferable to pick the master broker
+Sample message to publish:
+
+
+
+//Sample message:
+For Venmo id - ip with score mapping:
+{"type":"pu","id":"636318","values":[{"type":"idMapUpdate","timestamp":1511735263987,"values":{"keys":[{"name":"ip","value":"10.0.0.1","score":"10"},{"name":"vpu","value":"123456","score":null}],"segments":null}}]}
+Note:
+You can replace the following in the above message to test updating your identity:
+1. "name":"ip","value":"10.0.0.1","score":"10" --> provide ip,value and score that you plan to use.
+2. "name":"vpu","value":"123456" --> provide value of venmo id you wish to link the ip with. 
+//Sample message:
+For paypal id - ip with score mapping:
+{"type":"pu","id":"test","values":[{"type":"rpsIpMap","timestamp":1511735263987,"values":{"keys":[{"name":"ip","value":"1.0.0.0","score":"60.0"},{"name":"pu","value":"26541782572354785","score":null}],"segments":null}}]}
+Note:
+You can replace the following in the above message to test updating your identity:
+1. "name":"ip","value":"1.0.0.0","score":"60.0" --> provide ip,value and score that you plan to use.
+2. "name":"pu","value":"26541782572354785" --> provide value of paypal id you wish to link the ip with. 
+//Sample Message for cookie id mappings:
+{"type":"guid","id":"feedb24c1760a4a17f71c65387ffffffff","values":[{"type":"rpsFptiRequest","timestamp":1610757111913,"values":{"keys":[{"name":"pu","value":"12841783706582432","score":null},{"name":"fpti","value":"feedb24c1760a4a17f71c4a7ffffffff","score":null}],"segments":null}}]}
+You can replace the following in the above message to test updating your identity:
+1. "name":"fpti","value":"feedb24c1760a4a17f71c4a7ffffffff" --> provide cookie id value that you plan to use.
+2. "name":"pu","value":"12841783706582432" --> provide value of paypal id you wish to link the cookie id. 
+NOTE :publish the same message 2-3 times so the publishing goes through successfully. Once, published you can use the GET API to read the data and verify.
+
+Legacy Segment Updates [DEPRECATED]
+
+If you intend to update and test legacy rps segments, refer to the following confluence link:
+
+Sample Calls:
+
+GET SEGMENTS:
+
+Get Legacy segments using segment id:
+
+Get segments by id
+
+
+
+METHOD: GET
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/profile?key=pu:2235611535848528047&clientid=rps&filtersegments=pp.10,pp.11
+HEADERS: Content-Type : application/json
+RESPONSE: [STATUS CODE: 200/204]
+{
+    "segments": [
+        {
+            "name": "pp.10",
+            "value": "1"
+        },
+        {
+            "name": "pp.11",
+            "value": "1"
+        }
+    ],
+    "keys": {
+        "pu": "2235611535848528047"
+     },
+    "profileId": "3c30285a-823f-4675-809c-4293eceb78b4"
+}
+Get Legacy segments using segment code:
+
+Get segments by name
+
+
+
+METHOD: GET
+URL: https://msmaster.qa.paypal.com:14751/rpsreadserv/v1/profile?key=pu:2235611535848528047&clientid=rps&usesegmentname=true&filtersegments=SIGNUP_RECENCY,MARKETING_CLASSIFICATION
+HEADERS: Content-Type : application/json
+ RESPONSE: [STATUS CODE: 200/204]
+{
+    "segments": [
+        {
+            "name": "SIGNUP_RECENCY",
+            "value": "1"
+        },
+        {
+            "name": "MARKETING_CLASSIFICATION",
+            "value": "1"
+        }
+    ],
+    "keys": {
+        "pu": "2235611535848528047"
+    },
+    "profileId": "3c30285a-823f-4675-809c-4293eceb78b4"
+}
+Refer Here for steps to test these APIs: 
+
+Testing RPS on msmaster
+
+NOTE: We strongly encourage clients to integrate and start using the dynamic segments and related APIs mentioned on this page and stop using the legacy segments. We would not be making any further enhancements or additions to the legacy platform and all further changes or requirements would only be made on the new dynamic segmentation platform. Hence, kindly refrain from making any new integration with the legacy segment APIs, unless there is a real need for the same and kindly request you to review the same with the team.
+
+ 
+
+Segment Filters
+
+The API is used to retrieve dynamic segments or customer list based on the filter condition.
+
+Sample calls.
+
+SEARCH SEGMENTS - Filter based on Customer List
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:20068/v1/dynsegmentationserv/segments/search
+HEADERS: Content-Type : application/json
+REQUEST:
+{"filters": {
+        "type":["customer_list"],
+        "codes": ["QA"],
+        "region": ["NA"],
+        "country":["US"]
+        }, "fields":["id","code"] }
+RESPONSE:
+{
+    "dynamic_segments_count": 0,
+    "customer_lists_count": 3,
+    "customer_lists": [
+        {
+            "id": "CL-6727667954922777823",
+            "code": "NA_20190821_LEAP_QA"
+        },
+        {
+            "id": "CL-7599745265529944730",
+            "code": "PIE_NA_US_REGION_RQA"
+        },
+        {
+            "id": "CL-7062908965644907687",
+            "code": "QA_InStore_Offers_EmployeePilot_AllowList_CL"
+        }
+    ]
+}
+SEARCH SEGMENTS - Filter based on Dynamic Segments
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:20068/v1/dynsegmentationserv/segments/search
+HEADERS: Content-Type : application/json
+REQUEST:
+{  "filters": { 
+        "type":["dynamic_segment"],
+        "codes": ["QA_"], 
+        "region": ["NA"],
+        "country":["US"]    
+        } }
+RESPONSE:
+{
+    "dynamic_segments_count": 2,
+    "customer_lists_count": 0,
+    "dynamic_segments": [
+        {
+            "id": "DS-7548241186324950614",
+            "code": "QA_560557_Debit_XO_Offer",
+            "audience_count": -1,
+            "type": "BATCH"
+        },
+        {
+            "id": "DS-7062909544007308656",
+            "code": "QA_InStore_Offers_EmployeePilot_AllowList_DS",
+            "audience_count": 2,
+            "type": "BATCH"
+        }
+    ]
+}
+SEARCH SEGMENTS - Optional filter based on dynamic segment and customer list.
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:20068/v1/dynsegmentationserv/segments/search
+HEADERS: Content-Type : application/json
+REQUEST:
+{
+        "filters": {
+        "type":[],     
+        "created_by":["chpereira"]
+        },
+        "fields":["id","code"],  
+        "sort_order":"asc",
+        "sort_by":"code"
+}
+RESPONSE:
+{
+    "dynamic_segments_count": 1,
+    "customer_lists_count": 2,
+    "dynamic_segments": [
+        {
+            "id": "DS-7062909544007308656",
+            "code": "QA_InStore_Offers_EmployeePilot_AllowList_DS"
+        }
+    ],
+    "customer_lists": [
+        {
+            "id": "CL-7062908965644907687",
+            "code": "QA_InStore_Offers_EmployeePilot_AllowList_CL"
+        },
+        {
+            "id": "CL-7598561682218172651",
+            "code": "chpereira-visa-visa-plus-test"
+        }
+    ]
+}
+ 
+
+SEARCH SEGMENTS -Additional fields in response for dynamic segment and customer list.
+
+ 
+
+
+
+METHOD: POST
+URL: https://msmaster.qa.paypal.com:20068/v1/dynsegmentationserv/segments/search
+HEADERS: Content-Type : application/json
+REQUEST:
+{        "filters": {
+        "type":[]              
+        },
+        "fields":["id","code","description","audience_count","created_by","type"],  
+       }
+RESPONSE:
+{
+    "dynamic_segments_count": 5670,
+    "customer_lists_count": 400,
+    "dynamic_segments": [
+        {
+            "id": "DS-7306801429721457076",
+            "code": "0.5Back_Debit_Card_Eligibility",
+            "description": null,
+            "audience_count": -1,
+            "created_by": "rgovindaraju",
+            "type": "BATCH"
+        },
+        {
+            "id": "DS-7574376819299418380",
+            "code": "1099DA_2025_Biz",
+            "description": "Segment for merchants with 1099DA applicable",
+            "audience_count": -1,
+            "created_by": "kkhoo",
+            "type": "BATCH"
+        },
+        {
+            "id": "DS-7573582297132770337",
+            "code": "1099DA_2025_Con",
+            "description": "Consumers with Form 1099DA applicable for 2025",
+            "audience_count": -1,
+            "created_by": "kkhoo",
+            "type": "BATCH"
+        },
+        .
+        .
+        .
+        {
+            "id": "CL-6466114797668341538",
+            "code": "27428822_list",
+            "description": "TEST LIST",
+            "audience_count": 0,
+            "created_by": "tnatarajan",
+            "type": "ADHOC"
+        },
+        .
+        .
+How to integrate in raptor application and do local testing?
+application.properties (Covers Sandbox and Prod)
+
+rpsreadserv.baseUrl=https://${rpsreadserv_host}:${rpsreadserv_port}
+rpsreadserv.profile_attributes=/rpsreadserv/v1/profile-attributes
+rpsreadserv.attributes_metadata=/rpsreadserv/v1/metadata
+rpsreadserv.http.connectionTimeOutInMs=${default_connection_timeout_ms}
+rpsreadserv.http.readTimeoutInMs=${default_timeout_ms}
+rpsreadserv.http.requestTimeoutInMs=${default_timeout_ms}
+rpsreadserv.http.sslHandshakeTimeoutInMs=${default_sslHandshake_timeout_ms}
+rpsreadserv.http.connectionRequestTimeoutInMs=${default_timeout_ms}
+rpsreadserv.https.connectionTimeOutInMs=${default_connection_timeout_ms}
+rpsreadserv.https.readTimeoutInMs=${default_timeout_ms}
+rpsreadserv.https.sslHandshakeTimeoutInMs=${default_sslHandshake_timeout_ms}
+rpsreadserv.https.requestTimeoutInMs=${default_timeout_ms}
+rpsreadserv.POST.http.requestTimeoutInMs=${default_timeout_ms}
+rpsreadserv.GET.http.requestTimeoutInMs=${default_timeout_ms}
+
+/Dev/config/application-override.properties
+
+rpsreadserv.baseUrl=https://msmaster.qa.paypal.com:14751
+
+
+/QA/config/application-override.properties
+
+rpsreadserv.baseUrl=https://msmaster.qa.paypal.com:14751
+
+ 
+
+Sample rpsreadserv integration from raptor service:
+
+https://github.paypal.com/Campaigns-R/dynsegmentationserv/blob/develop/dynsegmentationservService/src/main/resources/META-INF/configuration/Common/config/application.properties#L17
+
+ 
+
+FAQs
+
+I created an account on stage and do not see the attributes expected to be updated in real time in RPS. The user is hence not qualifying for expected segments. What should i do?
+
+TBD
+
+I have set all the attributes/lists used in the Rules in a Dynamic Segment. The user still does not qualify for the segment. What should i do?
+
+TBD
+
+How can i request for a new attribute in RPS?
+
+TBD
+
+How are attributes updated into RPS?
+
+TBD
+
+Have Issues understanding the operators available for building segments.
+
+Refer to the following Section to understand what each operator stands for : Capabilities in Segment Evaluation#OperatorstoDatatypemapping
+
+ 
+
+Related content
+
+RPS Integration Use Case Patterns and Guidelines
+Namrata Jha
+RPS integration for PPC approvability score
+Rajkamal Subramanian (Deactivated)
+RPS Architecture and Capabilities
+Namrata Jha
+RPS - Support Document
+Former user (Deleted)
+How to use RPS tool
+Anisha Prasoon
+Integrations for Customer List in RPS
+Priyanka Bakthavalsalan (Deactivated)
+
+
+
+
+Comments
+
+thumbs up
+6
+
+Saksham Verma
+Jul 24, 2023
+In QA env, there's no special role required to see the customer attributes:
+
+Use this link: https://internal.msmaster.qa.paypal.com/segmentation/segments/view?roles=PP_SSO_CEP_SuperAdmin
+
+
+Reply
+
+
+1
+
+
+Sergei Erenburg
+Oct 17, 2023
+@Saksham Verma
+
+Is any role required on prod env?
+
+As I understand even customer lists have the same name on QA and Prod, they for sure will have different IDs. When using an API for adding new record to a customer list we have to provide customer list id and should be different for each environment. Is that correct?
+
+
+
+Saksham Verma
+Oct 17, 2023
+Hey @Sergei Erenburg, 
+
+We are also only clients for RPS. I posted the above link as it wasn't mentioned and I happened to stumble upon it. 
+
+You may post your question on their slack: help-rps
