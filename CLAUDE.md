@@ -34,7 +34,7 @@ Core workflow logic lives in `src/oslo_comms_studio/app.py`:
 
 1. **Intent capture** - Local browser UI posts the intent to `/api/demo`.
 2. **Copy generation** (`generate_copy`) - POSTs to the Cosmos AI Unified LLM API (OpenAI-compatible `/chat/completions`). Returns a `CopyDraft(title, body, cta)` dataclass parsed from JSON.
-3. **Audience recommendation** (`recommend_audience` -> `choose_top_dynamic_segment`) - fetches the full RPS dynamic segment catalog via `fetch_segment_catalog`, then scores every segment against search terms extracted from the intent (`build_search_terms`). Scoring weights: code match (+4), description match (+2), metadata match (+1), ACTIVE status (+3). Negative-intent detection (e.g. "not enrolled") boosts negative-audience segments (+30) and penalises positive-ownership segments (-15).
+3. **Audience recommendation** (`search_audience_options`) - asks Cosmos to turn the PM intent into a small, validated RPS `/segments/search` plan, executes only read-only Dynamic Segment searches, enriches shortlisted results by exact `segment_codes`, then ranks the candidates. The older full-catalog helper remains available for fallback/manual lookup paths but is not used by the Generate workflow.
 
 All new integrations should go behind the flow helpers in `src/oslo_comms_studio/app.py`. `RpsApiError` and `CosmosLlmError` are the two domain exceptions; the localhost server catches them and returns user-facing JSON errors.
 

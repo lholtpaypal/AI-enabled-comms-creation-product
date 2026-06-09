@@ -129,7 +129,7 @@ A second terminal is optional. It is useful only if you want to run test command
 4. Click **Generate workflow**.
 5. The page calls the local server at `POST /api/demo`.
 6. The local server calls Cosmos to generate copy.
-7. The local server calls RPS to rank Dynamic Segments.
+7. The local server uses Cosmos to plan targeted RPS Dynamic Segment searches, then calls RPS.
 8. The page displays the generated copy in two editable fields: Title and Body.
 9. The phone preview on the right updates live from the Title and Body fields.
 10. The page displays the selected RPS Segment ID and all returned RPS segment details.
@@ -172,7 +172,7 @@ curl -X POST http://127.0.0.1:8000/api/demo \
   -d '{"intent":"Create a push notification for users not enrolled in PayPal One Card"}'
 ```
 
-`POST /api/demo` returns generated copy, the recommended RPS Dynamic Segment, and two suggested Dynamic Segment alternatives.
+`POST /api/demo` returns generated copy, the recommended RPS Dynamic Segment, and two suggested Dynamic Segment alternatives from targeted RPS search results.
 
 Regenerate copy only:
 

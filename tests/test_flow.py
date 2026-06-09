@@ -1,5 +1,6 @@
 from oslo_comms_studio.app import (
     CopyDraft,
+    CosmosLlmError,
     build_search_terms,
     choose_top_dynamic_segment,
     find_dynamic_segment_record,
@@ -7,7 +8,9 @@ from oslo_comms_studio.app import (
     generate_copy_variants,
     parse_copy_response,
     parse_copy_variants_response,
+    parse_rps_search_plan,
     rank_dynamic_segment_options,
+    search_audience_options,
 )
 
 
@@ -232,3 +235,182 @@ def test_find_dynamic_segment_record_accepts_id_or_code() -> None:
 
     assert by_id == segments[0]
     assert by_code == segments[0]
+
+
+def test_parse_rps_search_plan_accepts_safe_segment_search() -> None:
+    plan = parse_rps_search_plan(
+        """
+        {
+          "audience_summary": "Users not enrolled in PayPal Debit Card",
+          "searches": [
+            {
+              "reason": "Search reusable debit-card eligibility segments",
+              "method": "POST",
+              "endpoint": "/segments/search",
+              "payload": {
+                "filters": {
+                  "type": ["dynamic_segment"],
+                  "codes": ["PayPal Debit Card", "PPDC", "not enrolled"]
+                },
+                "fields": ["id", "code", "description", "audience_count", "created_by", "type"],
+                "sort_by": "code",
+                "sort_order": "asc"
+              }
+            }
+          ]
+        }
+        """
+    )
+
+    assert plan.searches[0].endpoint == "/segments/search"
+    assert plan.searches[0].payload["filters"]["type"] == ["dynamic_segment"]
+    assert "PayPal_Debit_Card" in plan.searches[0].payload["filters"]["codes"]
+    assert plan.searches[0].payload["fields"][:2] == ["id", "code"]
+
+
+def test_parse_rps_search_plan_rejects_unsafe_endpoint() -> None:
+    try:
+        parse_rps_search_plan(
+            """
+            {
+              "audience_summary": "Bad plan",
+              "searches": [
+                {
+                  "method": "POST",
+                  "endpoint": "/rpsreadserv/v1/profile-attributes",
+                  "payload": {
+                    "filters": {"type": ["dynamic_segment"], "codes": ["PPDC"]},
+                    "fields": ["id", "code"]
+                  }
+                }
+              ]
+            }
+            """
+        )
+    except CosmosLlmError as exc:
+        assert "usable RPS search plan" in str(exc)
+    else:
+        raise AssertionError("Unsafe RPS search plan should be rejected.")
+
+
+def test_search_audience_options_executes_validated_segment_search(monkeypatch) -> None:
+    responses = [
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"audience_summary":"Debit card holdouts","searches":[{'
+                            '"method":"POST","endpoint":"/segments/search",'
+                            '"payload":{"filters":{"type":["dynamic_segment"],'
+                            '"codes":["PPDC","not enrolled"]},'
+                            '"fields":["id","code","description","audience_count","created_by","type"]}}]}'
+                        )
+                    }
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"segment_ids":["DS-2","DS-3","DS-1"]}',
+                    }
+                }
+            ]
+        },
+    ]
+    requests = []
+
+    def fake_post_cosmos_chat_completion(payload, api_key):
+        return responses.pop(0)
+
+    def fake_request_json(method, path, **kwargs):
+        requests.append((method, path, kwargs["json"]))
+        return {
+            "dynamic_segments": [
+                {
+                    "code": "PPDC_ACTIVE_CARDHOLDERS",
+                    "id": "DS-1",
+                    "description": "Users who have PPDC",
+                    "audience_count": 100,
+                    "created_by": "team-a",
+                    "type": "BATCH",
+                },
+                {
+                    "code": "NON_PPDC_ELIGIBLE_USERS",
+                    "id": "DS-2",
+                    "description": "Eligible users not enrolled in PayPal debit card",
+                    "audience_count": 250,
+                    "created_by": "team-b",
+                    "type": "BATCH",
+                },
+                {
+                    "code": "CONSUMER_WITH_NO_ACTIVE_DEBIT_CARDS",
+                    "id": "DS-3",
+                    "description": "Consumers with no active debit card",
+                    "audience_count": 200,
+                    "created_by": "team-c",
+                    "type": "BATCH",
+                },
+            ]
+        }
+
+    monkeypatch.setenv("COSMOS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "oslo_comms_studio.app.post_cosmos_chat_completion",
+        fake_post_cosmos_chat_completion,
+    )
+    monkeypatch.setattr("oslo_comms_studio.app.request_json", fake_request_json)
+
+    options = search_audience_options(
+        "Create a push notification for users not enrolled in PayPal Debit Card",
+        limit=3,
+    )
+
+    assert requests[0][0] == "POST"
+    assert requests[0][1] == "/segments/search"
+    assert requests[0][2]["filters"]["type"] == ["dynamic_segment"]
+    assert requests[1][1] == "/segments"
+    assert requests[1][2]["segment_codes"]
+    assert [option.recommendation.segment_id for option in options] == ["DS-2", "DS-3", "DS-1"]
+
+
+def test_search_audience_options_falls_back_to_targeted_segment_search(monkeypatch) -> None:
+    requests = []
+
+    def fake_post_cosmos_chat_completion(payload, api_key):
+        raise CosmosLlmError("planner unavailable")
+
+    def fake_request_json(method, path, **kwargs):
+        requests.append((method, path, kwargs["json"]))
+        return {
+            "dynamic_segments": [
+                {
+                    "code": "NON_PPDC_ELIGIBLE_USERS",
+                    "id": "DS-2",
+                    "description": "Eligible users not enrolled in PayPal debit card",
+                    "audience_count": 250,
+                    "created_by": "team-b",
+                    "type": "BATCH",
+                }
+            ]
+        }
+
+    monkeypatch.setenv("COSMOS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "oslo_comms_studio.app.post_cosmos_chat_completion",
+        fake_post_cosmos_chat_completion,
+    )
+    monkeypatch.setattr("oslo_comms_studio.app.request_json", fake_request_json)
+
+    options = search_audience_options(
+        "Create a push notification for users not enrolled in PayPal Debit Card",
+        limit=3,
+    )
+
+    assert requests
+    assert requests[0][1] == "/segments/search"
+    assert any(path == "/segments" and "segment_codes" in payload for _, path, payload in requests)
+    assert all("get_all_segments" not in payload for _, _, payload in requests)
+    assert options[0].recommendation.segment_id == "DS-2"

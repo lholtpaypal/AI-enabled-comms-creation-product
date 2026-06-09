@@ -25,7 +25,7 @@ from oslo_comms_studio.app import (
     generate_copy,
     generate_copy_variants,
     get_dynamic_segment,
-    recommend_audience_options,
+    search_audience_options,
 )
 
 DEMO_SERVER_VERSION = "push-enrollment-paypal-logo-v5"
@@ -1436,7 +1436,7 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
 
         copy_payload = copy_response_payload(copy)
         try:
-            audience_options = recommend_audience_options(intent, limit=3)
+            audience_options = search_audience_options(intent, limit=3)
         except RpsApiError as exc:
             self._send_json(
                 HTTPStatus.BAD_GATEWAY,
