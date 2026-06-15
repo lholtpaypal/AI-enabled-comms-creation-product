@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Business Case | AI-Native Comms Creation</title>
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #4b5563;
+      --line: #d7dee8;
+      --paper: #f6f8fb;
+      --card: #ffffff;
+      --paypal: #003087;
+      --paypal-2: #0070e0;
+      --teal: #0f766e;
+      --green: #2f7d32;
+      --amber: #a15c00;
+      --red: #b42318;
+      --blue-soft: #eaf3ff;
+      --green-soft: #eaf7ef;
+      --amber-soft: #fff4df;
+      --red-soft: #fff1f0;
+      --shadow: 0 16px 40px rgba(17, 24, 39, 0.09);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    a { color: var(--paypal-2); }
+
+    .page {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 28px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .hero-main,
+    .hero-panel,
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-main {
+      padding: 34px;
+      border-top: 5px solid var(--paypal);
+    }
+
+    .eyebrow {
+      color: var(--paypal);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      max-width: 860px;
+      margin-bottom: 16px;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .dek {
+      max-width: 780px;
+      margin-bottom: 24px;
+      color: #263241;
+      font-size: 18px;
+    }
+
+    .thesis {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      min-height: 118px;
+      padding: 16px;
+      background: #f9fbfd;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--paypal);
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .hero-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 26px;
+      background: #101820;
+      border-color: #101820;
+      color: #fff;
+    }
+
+    blockquote {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.15;
+    }
+
+    .quote-source {
+      margin-top: 14px;
+      color: #b7c7d9;
+      font-size: 13px;
+    }
+
+    .hero-panel .why {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.18);
+      color: #dbe8f8;
+      font-size: 14px;
+    }
+
+    section { margin-top: 24px; }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      line-height: 1.15;
+    }
+
+    .section-title p {
+      max-width: 520px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .card {
+      padding: 22px;
+    }
+
+    .old {
+      border-top: 4px solid var(--red);
+      background: linear-gradient(180deg, #fff, #fff8f7);
+    }
+
+    .new {
+      border-top: 4px solid var(--green);
+      background: linear-gradient(180deg, #fff, #f5fff8);
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 12px;
+      padding: 5px 9px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .old .tag { color: var(--red); background: var(--red-soft); }
+    .new .tag { color: var(--green); background: var(--green-soft); }
+
+    .flow {
+      display: grid;
+      gap: 8px;
+      margin: 16px 0 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .flow li {
+      position: relative;
+      padding: 12px 12px 12px 42px;
+      background: rgba(255,255,255,.78);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #263241;
+      font-size: 14px;
+    }
+
+    .flow li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #e8edf3;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .new .flow li::before {
+      background: #dff5e7;
+      color: var(--green);
+    }
+
+    .old .flow li::before {
+      background: #ffe0dc;
+      color: var(--red);
+    }
+
+    .insight-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .insight {
+      padding: 16px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .insight b {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--paypal);
+      font-size: 18px;
+    }
+
+    .insight span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .economics {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 10px 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      vertical-align: top;
+    }
+
+    th:first-child, td:first-child { text-align: left; }
+
+    th {
+      color: #374151;
+      background: #f2f6fb;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .total-row td {
+      background: #f7fafc;
+      font-weight: 700;
+    }
+
+    .callout {
+      padding: 18px;
+      background: var(--blue-soft);
+      border: 1px solid #bdd9ff;
+      border-radius: 8px;
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--paypal);
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .callout p,
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .note { margin: 12px 0 0; }
+
+    .yield-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .yield-card {
+      min-height: 160px;
+      padding: 20px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .yield-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--teal);
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .yield-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .formula {
+      margin-top: 14px;
+      padding: 16px;
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .formula small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .decision .card {
+      box-shadow: none;
+    }
+
+    .decision h3 {
+      margin-bottom: 8px;
+      color: var(--paypal);
+      font-size: 17px;
+    }
+
+    .decision p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .source-list {
+      margin: 22px 0 0;
+      padding: 16px 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .source-list p { margin-bottom: 6px; }
+    .source-list p:last-child { margin-bottom: 0; }
+
+    @media (max-width: 900px) {
+      .hero,
+      .comparison,
+      .economics,
+      .yield-grid,
+      .decision {
+        grid-template-columns: 1fr;
+      }
+
+      .thesis,
+      .insight-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 560px) {
+      .page { width: min(100% - 24px, 1180px); padding-top: 18px; }
+      .hero-main, .hero-panel, .card { padding: 18px; }
+      .thesis, .insight-row { grid-template-columns: 1fr; }
+      .section-title { display: block; }
+      th, td { padding: 8px 6px; font-size: 12px; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .page { width: 100%; padding: 0; }
+      .hero-main, .hero-panel, .card, .yield-card { box-shadow: none; }
+      a { color: #003087; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="hero-main">
+        <div class="eyebrow">Business case for VP review</div>
+        <h1>Comms creation is launch capacity. Launch capacity is TPV capacity.</h1>
+        <p class="dek">The current push-campaign path turns a business idea into a cross-functional implementation project. An AI-native creation flow turns the same idea into a structured campaign artifact: copy, audience, creative, experiment, compliance, and system configuration.</p>
+        <div class="thesis" aria-label="Executive summary metrics">
+          <div class="metric">
+            <strong>2-3 wks</strong>
+            <span>Current elapsed time for a standard cross-functional campaign path.</span>
+          </div>
+          <div class="metric">
+            <strong>8+</strong>
+            <span>Common handoffs across PM, CommsHub, design, engineering, legal, and ELMO.</span>
+          </div>
+          <div class="metric">
+            <strong>&lt;1 day</strong>
+            <span>Target common path when agents convert intent into configured campaign inputs.</span>
+          </div>
+        </div>
+      </div>
+      <aside class="hero-panel">
+        <div>
+          <blockquote>"There's filing taxes in the United States, then there's creating comms at PayPal."</blockquote>
+          <div class="quote-source">Jordan Digby testimonial</div>
+        </div>
+        <p class="why">This is not a tooling complaint. It is a throughput constraint on customer engagement, experimentation velocity, and the number of PayPal moments teams can put into market.</p>
+      </aside>
+    </header>
+
+    <section>
+      <div class="section-title">
+        <h2>What Actually Changes</h2>
+        <p>The old workflow asks humans to learn internal systems one campaign at a time. The new workflow teaches the systems to agents once, then lets teams express business intent.</p>
+      </div>
+      <div class="comparison">
+        <article class="card old">
+          <span class="tag">Today: human-facing process</span>
+          <h3>Creators spend most of their time translating, waiting, and chasing dependencies.</h3>
+          <ol class="flow">
+            <li>Campaign creator has an idea, then schedules kickoff and follow-up with CommsHub.</li>
+            <li>Creator is routed to documentation and requisitions design support.</li>
+            <li>Design bottleneck forms; borrowed designers onboard to Figma resources and principles.</li>
+            <li>Event-based personalization creates a new engineering workflow with two engineering teams.</li>
+            <li>Creator is hand-held through opaque campaign configuration fields and database inputs.</li>
+            <li>CommsHub engineering audits one-off fields, then ELMO and legal are configured manually.</li>
+          </ol>
+        </article>
+
+        <article class="card new">
+          <span class="tag">Target: agent-facing workflow</span>
+          <h3>The PM states intent once; agents produce the campaign package for review.</h3>
+          <ol class="flow">
+            <li>Creator describes the campaign goal, audience hypothesis, timing, and desired user action.</li>
+            <li>Agents generate compliant copy, creative specs, deep links, RPS audience options, and event logic.</li>
+            <li>Experimentation variants and holdout are generated by default, then mapped to ELMO fields.</li>
+            <li>PIE and database configuration are written from structured outputs instead of manual forms.</li>
+            <li>Human review focuses on strategy, edge-case legal judgment, and launch approval.</li>
+          </ol>
+        </article>
+      </div>
+
+      <div class="insight-row">
+        <div class="insight">
+          <b>Ease of use</b>
+          <span>Natural-language intent replaces tool fluency as the entry requirement.</span>
+        </div>
+        <div class="insight">
+          <b>More launches</b>
+          <span>Soft-good ideas become cheap experiments instead of abandoned coordination projects.</span>
+        </div>
+        <div class="insight">
+          <b>Better targeting</b>
+          <span>Event-based personalization is preserved instead of dropped to make the process survivable.</span>
+        </div>
+        <div class="insight">
+          <b>Built-in testing</b>
+          <span>Every campaign can ship with variants, holdout, and readable measurement setup.</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Cost Report</h2>
+        <p>Assumptions are intentionally simple and fully loaded. They exclude the larger opportunity cost of delayed launches and foregone learning.</p>
+      </div>
+      <div class="economics">
+        <article class="card">
+          <table aria-label="Estimated per-campaign labor cost">
+            <thead>
+              <tr>
+                <th>Role / cost line</th>
+                <th>Rate</th>
+                <th>Today</th>
+                <th>Agent path</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Campaign PM / marketer</td>
+                <td>$120/hr</td>
+                <td>14 hrs / $1,680</td>
+                <td>2.5 hrs / $300</td>
+              </tr>
+              <tr>
+                <td>CommsHub platform PM</td>
+                <td>$130/hr</td>
+                <td>9 hrs / $1,170</td>
+                <td>0.5 hrs / $65</td>
+              </tr>
+              <tr>
+                <td>Design resource</td>
+                <td>$125/hr</td>
+                <td>18 hrs / $2,250</td>
+                <td>0 hrs / $0 common path</td>
+              </tr>
+              <tr>
+                <td>Platform + creator engineering</td>
+                <td>$180-$190/hr</td>
+                <td>14 hrs / $2,580</td>
+                <td>0 hrs / $0 common path</td>
+              </tr>
+              <tr>
+                <td>Legal / compliance review</td>
+                <td>$210/hr</td>
+                <td>3 hrs / $630</td>
+                <td>0.5 hrs / $105</td>
+              </tr>
+              <tr>
+                <td>Agent compute + platform overhead</td>
+                <td>Modeled</td>
+                <td>$0</td>
+                <td>$150</td>
+              </tr>
+              <tr class="total-row">
+                <td>Total estimated cost per attempt</td>
+                <td></td>
+                <td>58 hrs / $8,310</td>
+                <td>3.5 hrs / $620</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="note">Current launch-through assumptions from operating context: ~3% of soft-good ideas launch; ~30% of important campaigns launch, often after personalization is reduced.</p>
+        </article>
+
+        <aside class="callout">
+          <strong>$7.7K saved per campaign attempt</strong>
+          <p>That is only the direct labor delta. The larger gain is moving from a scarce, meeting-heavy service model to a repeatable campaign factory.</p>
+          <p><b>Effective labor cost per launched important campaign:</b><br>Today: $8,310 / 30% = ~$27.7K<br>Agent path: $620 / 80% target = ~$775</p>
+          <p><b>Soft-good ideas:</b><br>At a 3% launch rate, today's process behaves like a ~$277K effective labor funnel before a single campaign reaches customers.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Why This Matters To PayPal's Enterprise Metrics</h2>
+        <p>PayPal's business is volume-tethered. Faster, more targeted communications increase the number of chances to move customers toward actions that create payment volume.</p>
+      </div>
+      <div class="yield-grid">
+        <article class="yield-card">
+          <strong>$1.79T</strong>
+          <span>FY2025 total payment volume processed by PayPal, up 7% year over year.</span>
+        </article>
+        <article class="yield-card">
+          <strong>$29.8B</strong>
+          <span>FY2025 transaction revenue; the company says transaction revenue growth is typically correlated with TPV and payment transactions.</span>
+        </article>
+        <article class="yield-card">
+          <strong>439M</strong>
+          <span>Active accounts across approximately 200 markets; communications are a lever for engagement and activation.</span>
+        </article>
+      </div>
+      <div class="formula">
+        Sensitivity: $1M incremental TPV x 1.66% FY2025 transaction-revenue yield = ~$16.6K transaction revenue
+        <small>1.66% is transaction revenue divided by TPV: $29.798B / $1.79T. Actual campaign economics vary by product mix, funding mix, cross-border share, incentives, losses, and merchant pricing.</small>
+      </div>
+      <div class="comparison" style="margin-top: 18px;">
+        <article class="card">
+          <h3>Operating implication</h3>
+          <p>When campaign creation is slow, teams ration ideas. They remove personalization, skip variants, delay launches, or stop coming back. That limits the number of tested customer moments PayPal can put into market.</p>
+        </article>
+        <article class="card">
+          <h3>Investor implication</h3>
+          <p>PayPal reports TPV, payment transactions, active accounts, and payment transactions per active account as key metrics that help investors evaluate the business. A faster comms engine is a practical operating lever against those metrics.</p>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <h2>Executive Decision</h2>
+        <p>The decision is not whether agents can write copy. The decision is whether PayPal wants comms creation to remain bespoke internal consulting or become scalable commercial infrastructure.</p>
+      </div>
+      <div class="decision">
+        <article class="card">
+          <h3>Fund the system context</h3>
+          <p>Prioritize MCP/API access for RPS metadata, PIE fields, ELMO schemas, legal rules, deep links, and event triggers. RPS is the highest-value dependency because audience quality drives relevance.</p>
+        </article>
+        <article class="card">
+          <h3>Standardize the campaign package</h3>
+          <p>Require every campaign to produce the same machine-readable bundle: copy, variants, audience rationale, experiment plan, compliance status, destination, timing, and rollback criteria.</p>
+        </article>
+        <article class="card">
+          <h3>Measure the business loop</h3>
+          <p>Track cycle time, launch conversion, variants per campaign, readout rate, incremental TPV, transaction revenue, opt-outs, and repeat creator usage.</p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="source-list">
+      <p><b>Sources and assumptions:</b> PayPal FY2025 Form 10-K filed February 3, 2026: <a href="https://www.sec.gov/Archives/edgar/data/1633917/000163391726000024/pypl-20251231.htm">SEC filing</a>. PayPal 2025 Investor Day page: <a href="https://paypal2025irday.q4ir.com/home/default.aspx">strategy, growth priorities, product innovation, data and AI tools</a>.</p>
+      <p>Cost model uses assumed fully loaded hourly rates and estimated effort from the provided workflow context. It is a directional operating model, not a finance-approved forecast.</p>
+    </footer>
+  </main>
+</body>
+</html>

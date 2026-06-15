@@ -325,8 +325,10 @@ def rps_search_plan_messages(intent: str) -> list[dict[str, str]]:
                 'country, and created_by. Always set filters.type to ["dynamic_segment"]. '
                 "Allowed fields are id, code, description, audience_count, created_by, and type. "
                 "Do not use profile APIs, customer-list mutation APIs, evaluate APIs, or "
-                "get_all_segments. Prefer natural business terms, product names, abbreviations, "
-                "negated forms, and likely code fragments in filters.codes."
+                "get_all_segments. Favor broad retrieval over exact guessing: use natural business "
+                "terms, product names, abbreviations, negated forms, and common code fragments in "
+                "filters.codes. It is acceptable for RPS to return hundreds of candidate segments; "
+                "the client will rerank candidates after retrieval."
             ),
         },
         {
@@ -934,18 +936,30 @@ def rerank_audience_options_with_llm(
 
 
 def search_audience_options(intent: str, limit: int = 3) -> list[AudienceOption]:
+    records: list[dict[str, Any]] = []
+    plan_error: RpsApiError | None = None
     try:
         plan = generate_rps_search_plan(intent)
-        records = execute_rps_search_plan(plan)
-        if not records:
-            records = execute_rps_search_plan(fallback_rps_search_plan(intent))
+        records.extend(execute_rps_search_plan(plan))
     except CosmosLlmError:
-        records = execute_rps_search_plan(fallback_rps_search_plan(intent))
-    except RpsApiError:
-        fallback_plan = fallback_rps_search_plan(intent)
-        if not fallback_plan.searches:
+        pass
+    except RpsApiError as exc:
+        if not fallback_rps_search_plan(intent).searches:
             raise
-        records = execute_rps_search_plan(fallback_plan)
+        records = []
+        plan_error = exc
+
+    broad_plan = fallback_rps_search_plan(intent)
+    if broad_plan.searches:
+        try:
+            records.extend(execute_rps_search_plan(broad_plan))
+        except RpsApiError as exc:
+            if not records:
+                if plan_error is not None:
+                    raise plan_error from exc
+                raise
+
+    records = dedupe_dynamic_segment_records(records)
 
     if not records:
         return []

@@ -1,0 +1,103 @@
+{
+  "campaign_ref_id": "8718341626",
+  "campaign_id": "9060369910",
+  "version": 1,
+  "campaign_name": "Import Test 2",
+  "description": "this is testing segment. This PUSH has a segment attached which has the test account  5066587551981708212 added. \nSo the push will only be going the the test account in this segment, and not to any other account numbers.",
+  "tenant_id": 101,
+  "tenant_name": "PAYPAL",
+  "status": "DRAFT",
+  "owners": [
+    "apasharma"
+  ],
+  "team_dls": [
+    "test@paypal.com"
+  ],
+  "campaign_product": "Savings",
+  "campaign_action": "add_money",
+  "countries": [
+    "AS",
+    "BT",
+    "AU",
+    "US",
+    "CA"
+  ],
+  "delivery_type": "API_BASED",
+  "delivery_config": {
+    "target_type": "DYNAMIC_SEGMENT",
+    "target_config": {
+      "dynamic_segment": {
+        "between_groups_operator": "OR",
+        "groups": [
+          {
+            "within_group_operator": "AND",
+            "include_segments": [
+              {
+                "segment_id": "DS-7532436059975491542",
+                "segment_code": "hukaur_test_ds"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "channels": [
+    1002
+  ],
+  "channel_details": [
+    {
+      "channel_id": 1002,
+      "channel_name": "PUSH",
+      "channel_rules": {
+        "freq_control_config": {
+          "freq_enabled": false,
+          "base_attributes": [
+            {
+              "attribute": "SENT",
+              "freq_period": "ALWAYS"
+            }
+          ]
+        },
+        "type": "TRANSACTIONAL",
+        "preference": "PURCHASE",
+        "priority": "Standard"
+      },
+      "content": [
+        {
+          "content_id": "2278291062",
+          "content_name": "Variant 1",
+          "content_variant_code": 1,
+          "default_locale": "en-US",
+          "content_payload": {
+            "localizable_content": {
+              "en-US": {
+                "body": "This is push segment test",
+                "title": "This is push segment test"
+              }
+            },
+            "non_localizable_content": {
+              "deep_link": "paypal://home"
+            }
+          },
+          "content_legal_review_exception": true,
+          "content_legal_review_exception_reason": "testing",
+          "status": "ACTIVE",
+          "created_by": "apasharma",
+          "time_created_ms": 1778840400130,
+          "updated_by": "apasharma",
+          "time_updated_ms": 1778840400130
+        }
+      ],
+      "status": "ACTIVE",
+      "created_by": "apasharma",
+      "time_created_ms": 1778840400130,
+      "updated_by": "apasharma",
+      "time_updated_ms": 1778840400130
+    }
+  ],
+  "created_by": "apasharma",
+  "time_created_ms": 1778840400130,
+  "updated_by": "apasharma",
+  "time_updated_ms": 1778840400130
+}

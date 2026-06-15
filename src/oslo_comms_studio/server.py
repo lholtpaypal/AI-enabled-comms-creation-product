@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from dataclasses import asdict
+from datetime import UTC, datetime
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,7 +29,8 @@ from oslo_comms_studio.app import (
     search_audience_options,
 )
 
-DEMO_SERVER_VERSION = "push-enrollment-paypal-logo-v5"
+DEMO_SERVER_VERSION = "blank-startup-preview-v9"
+LAST_WORKFLOW_RESPONSE: dict[str, Any] | None = None
 PAYPAL_LOGO_SVG = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72">
   <rect width="64" height="72" rx="4" fill="#17214a"/>
@@ -162,6 +164,57 @@ INDEX_HTML = """
       align-items: start;
     }
 
+    .intro-strip {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+      border: 1px solid #b9d8ff;
+      border-radius: 8px;
+      background: #eef6ff;
+      padding: 16px;
+    }
+
+    .intro-strip h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .intro-strip p {
+      max-width: 980px;
+      margin: 0;
+      color: #344054;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .intro-strip ol {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin: 2px 0 0;
+      padding: 0;
+      list-style: none;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .intro-strip li {
+      border: 1px solid #c8ddf8;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.56);
+      padding: 9px 10px;
+    }
+
+    .intro-strip li strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
     .workflow {
       display: grid;
       gap: 14px;
@@ -218,12 +271,147 @@ INDEX_HTML = """
       padding: 16px;
     }
 
+    .section-help {
+      margin: 0 0 10px;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .section-help strong {
+      color: var(--ink);
+    }
+
+    .field-help,
+    .small-note {
+      margin: -2px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .example-list {
+      margin: 10px 0 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      color: #344054;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .example-list summary {
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 750;
+    }
+
+    .example-list summary:focus-visible {
+      border-radius: 4px;
+      outline: 3px solid rgba(0, 112, 224, 0.16);
+    }
+
+    .example-list strong {
+      color: var(--ink);
+    }
+
+    .example-list ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+
+    .example-list li + li {
+      margin-top: 4px;
+    }
+
     label {
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 6px;
       margin-bottom: 8px;
       color: var(--muted);
       font-size: 13px;
       font-weight: 650;
+    }
+
+    .field-tag {
+      border-radius: 999px;
+      background: #eef1f4;
+      color: #596373;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: 750;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .help-tip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      border: 1px solid #aeb8c5;
+      border-radius: 999px;
+      background: #fff;
+      color: #475467;
+      cursor: help;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .help-tip::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 9px);
+      z-index: 20;
+      width: max-content;
+      max-width: min(320px, calc(100vw - 40px));
+      border-radius: 8px;
+      background: #101828;
+      color: #fff;
+      padding: 9px 10px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 4px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      white-space: normal;
+    }
+
+    .help-tip::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 3px);
+      z-index: 21;
+      border: 6px solid transparent;
+      border-top-color: #101828;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 4px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+    }
+
+    .help-tip:hover::after,
+    .help-tip:hover::before,
+    .help-tip:focus-visible::after,
+    .help-tip:focus-visible::before {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .help-tip:focus-visible {
+      outline: 3px solid rgba(0, 112, 224, 0.16);
+      outline-offset: 2px;
     }
 
     textarea,
@@ -340,6 +528,8 @@ INDEX_HTML = """
       min-height: 20px;
       color: var(--muted);
       font-size: 13px;
+      line-height: 1.45;
+      flex: 1 1 260px;
     }
 
     .badge {
@@ -483,6 +673,24 @@ INDEX_HTML = """
       display: grid;
       gap: 10px;
       justify-items: center;
+    }
+
+    .preview-note {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .preview-note strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--ink);
+      font-size: 13px;
     }
 
     .phone-shell {
@@ -744,6 +952,14 @@ INDEX_HTML = """
       line-height: 1.3;
     }
 
+    .variant-question p {
+      max-width: 780px;
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
     .variant-row {
       display: flex;
       justify-content: center;
@@ -794,6 +1010,10 @@ INDEX_HTML = """
       .support-grid {
         grid-template-columns: 1fr;
       }
+
+      .intro-strip ol {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 560px) {
@@ -836,42 +1056,88 @@ INDEX_HTML = """
       <div class="health"><span id="healthDot" class="dot"></span><span id="healthText">Checking local config</span></div>
     </header>
 
+    <section class="intro-strip" aria-label="How to use this page">
+      <h2>
+        Create from intent
+        <span class="help-tip" tabindex="0" aria-label="Page overview help" data-tooltip="Start at step 1 and work down the page. Every generated output is visible, and editable fields are marked.">?</span>
+      </h2>
+      <p>Start with a plain-English campaign request. The tool uses that intent to assemble the first pass, but it does not hide the work: you can see and edit the copy, inspect the audience, compare alternatives, and decide whether variants are needed.</p>
+      <ol aria-label="Workflow summary">
+        <li><strong>1. Write the intent</strong> Say what you want to create, who it is for, and what the customer should do.</li>
+        <li><strong>2. Generate the workflow</strong> Cosmos drafts copy while RPS searches for matching Dynamic Segments.</li>
+        <li><strong>3. Edit the copy</strong> Title and body are editable, and the phone preview updates immediately.</li>
+        <li><strong>4. Inspect the audience</strong> The selected RPS segment ID and read-only RPS details are shown before you trust it.</li>
+        <li><strong>5. Compare alternatives</strong> Suggested audience options are clickable if another segment fits better.</li>
+        <li><strong>6. Create variants</strong> Choose whether to generate A/B copy variants from the current edited copy.</li>
+      </ol>
+    </section>
+
     <div class="demo-layout">
       <div class="workflow">
         <form id="intentForm" class="panel">
           <div class="panel-header">
-            <h2 class="panel-title"><span class="step-number">1</span>Declared Intent</h2>
+            <h2 class="panel-title">
+              <span class="step-number">1</span>
+              Intent
+              <span class="help-tip" tabindex="0" aria-label="Intent help" data-tooltip="Describe the campaign in plain English. Include message type, audience, product or feature, and what the customer should do. You do not need final copy or an RPS segment ID yet.">?</span>
+            </h2>
             <span class="badge" id="modelBadge">Localhost</span>
           </div>
           <div class="panel-body">
-            <label for="intent">Intent</label>
-            <textarea id="intent" name="intent" spellcheck="true">__DEFAULT_INTENT__</textarea>
+            <p class="section-help">Describe the campaign.</p>
+            <label for="intent">
+              Campaign intent
+              <span class="field-tag">Editable</span>
+              <span class="help-tip" tabindex="0" aria-label="Campaign intent field help" data-tooltip="This is the main input. More specific intent gives the tool better context for copy, audience search, deeplink assumptions, and variants.">?</span>
+            </label>
+            <textarea id="intent" name="intent" spellcheck="true" placeholder="Example: Create a push notification for eligible US customers who have not enrolled in the PayPal Debit Card. Goal: get them to start enrollment. Tone: clear and helpful.">__DEFAULT_INTENT__</textarea>
+            <details class="example-list" aria-label="Campaign intent examples">
+              <summary>Need examples? Open this.</summary>
+              <ul>
+                <li>Create a push notification for eligible US customers who have not enrolled in PayPal Debit Card. Goal: get them to start enrollment.</li>
+                <li>Create an app tile for customers who used Pay Later last month. Goal: remind them that a new promo is available.</li>
+                <li>Create an email for small business sellers with high checkout volume. Goal: introduce a working-capital offer. Keep the tone practical.</li>
+              </ul>
+            </details>
             <div class="actions">
               <button id="submitButton" class="primary" type="submit">Generate workflow</button>
-              <span id="workflowStatus" class="status">Ready</span>
+              <span id="workflowStatus" class="status">Waiting for your campaign intent.</span>
             </div>
           </div>
         </form>
 
         <section class="panel">
           <div class="panel-header">
-            <h2 class="panel-title"><span class="step-number">2</span>Editable Copy</h2>
+            <h2 class="panel-title">
+              <span class="step-number">2</span>
+              Copy
+              <span class="help-tip" tabindex="0" aria-label="Copy help" data-tooltip="Cosmos drafts the title and body from your intent. Treat the generated text as a starting point. Both fields are editable, and the phone preview updates as you type.">?</span>
+            </h2>
             <span id="copyBadge" class="badge">Waiting</span>
           </div>
           <div class="panel-body">
+            <p class="section-help">Edit the generated message.</p>
             <div class="copy-fields">
               <div>
-                <label for="copyTitle">Title</label>
-                <input id="copyTitle" class="copy-title" type="text" spellcheck="true">
+                <label for="copyTitle">
+                  Push title
+                  <span class="field-tag">Editable</span>
+                  <span class="help-tip" tabindex="0" aria-label="Push title help" data-tooltip="This is the bold first line customers see. Keep it short, concrete, and easy to understand at a glance.">?</span>
+                </label>
+                <input id="copyTitle" class="copy-title" type="text" spellcheck="true" placeholder="Generated title appears here. You can type your own.">
               </div>
               <div>
-                <label for="copyBody">Body</label>
-                <textarea id="copyBody" class="copy-body" spellcheck="true"></textarea>
+                <label for="copyBody">
+                  Push body
+                  <span class="field-tag">Editable</span>
+                  <span class="help-tip" tabindex="0" aria-label="Push body help" data-tooltip="This is the supporting sentence. Say the customer benefit or next step clearly. Avoid cramming in details that belong in the landing experience.">?</span>
+                </label>
+                <textarea id="copyBody" class="copy-body" spellcheck="true" placeholder="Generated body copy appears here. You can rewrite it."></textarea>
               </div>
             </div>
             <div class="actions">
               <button id="regenButton" class="secondary" type="button" disabled>Regenerate copy text</button>
-              <span id="copyStatus" class="status">Run the workflow to generate copy.</span>
+              <span id="copyStatus" class="status">Run step 1 to generate editable copy.</span>
             </div>
           </div>
         </section>
@@ -879,22 +1145,35 @@ INDEX_HTML = """
         <div class="support-grid">
           <section class="panel">
             <div class="panel-header">
-              <h2 class="panel-title"><span class="step-number">3</span>Audience</h2>
+              <h2 class="panel-title">
+                <span class="step-number">3</span>
+                Audience
+                <span class="help-tip" tabindex="0" aria-label="Audience help" data-tooltip="The audience controls who receives the message. The tool searches RPS Dynamic Segments from your intent, then shows the selected segment so you can inspect it.">?</span>
+              </h2>
               <span id="rpsBadge" class="badge">Waiting</span>
             </div>
             <div class="panel-body">
+              <p class="section-help">Review the selected segment.</p>
               <div class="split">
                 <div>
-                  <label for="segmentId">RPS Segment ID</label>
-                  <input id="segmentId" type="text" autocomplete="off" placeholder="Dynamic Segment ID">
+                  <label for="segmentId">
+                    RPS Segment ID
+                    <span class="field-tag">Editable</span>
+                    <span class="help-tip" tabindex="0" aria-label="RPS segment ID help" data-tooltip="The recommended segment ID appears here. Paste a different Dynamic Segment ID or code to replace it and refresh the details below.">?</span>
+                  </label>
+                  <input id="segmentId" type="text" autocomplete="off" placeholder="Paste a Dynamic Segment ID or code">
                   <div class="actions">
-                    <span id="segmentStatus" class="status">Run the workflow to select a segment.</span>
+                    <span id="segmentStatus" class="status">Run step 1 to let RPS choose a segment, or paste a segment ID yourself.</span>
                   </div>
                 </div>
                 <div>
-                  <label>RPS Details</label>
+                  <label>
+                    RPS details
+                    <span class="field-tag">Read-only</span>
+                    <span class="help-tip" tabindex="0" aria-label="RPS details help" data-tooltip="These are facts returned by RPS. Check the code, description, count, status, country, owner, and refresh timing before trusting the audience.">?</span>
+                  </label>
                   <div id="segmentDetails" class="details-box">
-                    <div class="empty">No segment selected.</div>
+                    <div class="empty">No segment selected yet. After the workflow runs, this box will explain exactly which RPS segment was found.</div>
                   </div>
                 </div>
               </div>
@@ -903,12 +1182,17 @@ INDEX_HTML = """
 
           <section class="panel">
             <div class="panel-header">
-              <h2 class="panel-title"><span class="step-number">4</span>Suggested Audience Options</h2>
+              <h2 class="panel-title">
+                <span class="step-number">4</span>
+                Alternatives
+                <span class="help-tip" tabindex="0" aria-label="Alternative audiences help" data-tooltip="These are other RPS segments that looked relevant. Click one if its description fits the campaign better than the current selection.">?</span>
+              </h2>
               <span id="suggestionsBadge" class="badge">Waiting</span>
             </div>
             <div class="panel-body">
+              <p class="section-help">Optional audience swaps.</p>
               <div id="suggestions" class="suggestions">
-                <div class="empty">Run the workflow to see suggested audiences.</div>
+                <div class="empty">Run step 1 to see suggested audiences.</div>
               </div>
             </div>
           </section>
@@ -916,6 +1200,12 @@ INDEX_HTML = """
       </div>
 
       <aside class="phone-panel" aria-label="Push notification preview">
+        <div class="preview-note">
+          <strong>
+            Live preview
+            <span class="help-tip" tabindex="0" aria-label="Live preview help" data-tooltip="This mock phone shows how the current title and body read on a lock screen. It updates immediately when you edit copy.">?</span>
+          </strong>
+        </div>
         <div class="phone-shell">
           <div class="phone-screen">
             <div class="phone-status">
@@ -935,8 +1225,8 @@ INDEX_HTML = """
             <div class="notification">
               <div class="paypal-app-icon" aria-hidden="true"></div>
               <div>
-                <div id="previewTitle" class="notification-title">PayPal</div>
-                <div id="previewBody" class="notification-body">You received $0.01 USD from Heidy Diana</div>
+                <div id="previewTitle" class="notification-title"></div>
+                <div id="previewBody" class="notification-body"></div>
               </div>
               <div class="notification-now">now</div>
             </div>
@@ -952,19 +1242,29 @@ INDEX_HTML = """
 
     <section class="panel variant-panel">
       <div class="panel-header">
-        <h2 class="panel-title"><span class="step-number">5</span>Generate Content Variants for A/B Experimentation</h2>
+        <h2 class="panel-title">
+          <span class="step-number">5</span>
+          Variants
+          <span class="help-tip" tabindex="0" aria-label="Variants help" data-tooltip="Variants test different ways to say the same thing. The current title and body, including edits you made, become the control copy.">?</span>
+        </h2>
         <span id="variantsBadge" class="badge">Waiting</span>
       </div>
       <div class="panel-body">
+        <p class="section-help">Create A/B copy options.</p>
         <div class="variant-question">
-          <strong>Create content variations for A/B testing?</strong>
+          <div>
+            <strong>
+              Create two variants?
+              <span class="help-tip" tabindex="0" aria-label="Create variants help" data-tooltip="Choose Yes to generate Variant A and Variant B. Choose No if the current copy should remain the only version.">?</span>
+            </strong>
+          </div>
           <div class="button-row">
             <button id="variantsYes" class="choice-button yes" type="button" disabled>Yes</button>
             <button id="variantsNo" class="choice-button" type="button" disabled>No</button>
           </div>
         </div>
         <div class="actions">
-          <span id="variantsStatus" class="status">Generate the workflow first.</span>
+          <span id="variantsStatus" class="status">Run step 1 first. Variants use the editable copy from step 2.</span>
         </div>
         <div id="variantRow" class="variant-row" hidden></div>
       </div>
@@ -1019,12 +1319,14 @@ INDEX_HTML = """
     function setWorkflowLoading(isLoading) {
       submitButton.disabled = isLoading;
       regenButton.disabled = isLoading || !intent.value.trim();
-      workflowStatus.textContent = isLoading ? "Calling Cosmos and RPS" : "Ready";
+      workflowStatus.textContent = isLoading
+        ? "Working: using your intent to ask Cosmos for copy and RPS for audience matches."
+        : "Ready for edits or another workflow run.";
     }
 
     function updatePreview() {
-      previewTitle.textContent = copyTitle.value.trim() || "PayPal";
-      previewBody.textContent = copyBody.value.trim() || "You received $0.01 USD from Heidy Diana";
+      previewTitle.textContent = copyTitle.value.trim();
+      previewBody.textContent = copyBody.value.trim();
     }
 
     function applyCopy(copy) {
@@ -1063,7 +1365,7 @@ INDEX_HTML = """
     function renderSegmentDetails(option) {
       const recommendation = optionRecommendation(option);
       if (!recommendation) {
-        segmentDetails.innerHTML = '<div class="empty">No segment selected.</div>';
+        segmentDetails.innerHTML = '<div class="empty">No segment selected yet. After the workflow runs, this box will explain exactly which RPS segment was found.</div>';
         return;
       }
 
@@ -1112,7 +1414,7 @@ INDEX_HTML = """
     function setSelectedAudience(option, shouldUpdateInput = true) {
       const recommendation = optionRecommendation(option);
       if (!recommendation) {
-        segmentStatus.textContent = "No segment selected.";
+        segmentStatus.textContent = "No segment selected. Paste a Dynamic Segment ID or choose a suggestion when one is available.";
         setBadge(rpsBadge, "No match", "warn");
         renderSegmentDetails(null);
         return;
@@ -1126,8 +1428,8 @@ INDEX_HTML = """
         });
       }
       segmentStatus.textContent = recommendation.segment_id
-        ? `Selected ${recommendation.segment_id}`
-        : "Selected audience";
+        ? `Done: selected ${recommendation.segment_id}. This field is editable if you want to replace it.`
+        : "Done: selected an audience. This field is editable if you want to replace it.";
       setBadge(rpsBadge, "Selected", "ok");
       renderSegmentDetails(option);
     }
@@ -1135,7 +1437,7 @@ INDEX_HTML = """
     function renderSuggestions(options) {
       activeSuggestions = options || [];
       if (!activeSuggestions.length) {
-        suggestions.innerHTML = '<div class="empty">No alternate dynamic audiences returned.</div>';
+        suggestions.innerHTML = '<div class="empty">No alternate dynamic audiences returned. The selected segment in step 3 is the only match the search returned.</div>';
         setBadge(suggestionsBadge, "No options", "warn");
         return;
       }
@@ -1146,7 +1448,7 @@ INDEX_HTML = """
           <button class="suggestion" type="button" data-index="${index}">
             <strong>${escapeHtml(recommendation.code || recommendation.segment_id)}</strong>
             <span>${escapeHtml(recommendation.description || "No description returned.")}</span>
-            <span>${escapeHtml(recommendation.segment_id)} · ${escapeHtml(recommendation.audience_count || "Unavailable")}</span>
+            <span>Click to use this segment. ${escapeHtml(recommendation.segment_id)} · ${escapeHtml(recommendation.audience_count || "Unavailable")}</span>
           </button>
         `;
       }).join("");
@@ -1165,8 +1467,8 @@ INDEX_HTML = """
           <div class="standalone-notification">
             <div class="paypal-app-icon" aria-hidden="true"></div>
             <div>
-              <div class="notification-title">${escapeHtml(copy.title || "PayPal")}</div>
-              <div class="notification-body">${escapeHtml(copy.body || "Notification body")}</div>
+              <div class="notification-title">${escapeHtml(copy.title || "")}</div>
+              <div class="notification-body">${escapeHtml(copy.body || "")}</div>
             </div>
             <div class="notification-now">now</div>
           </div>
@@ -1237,18 +1539,18 @@ INDEX_HTML = """
       setBadge(copyBadge, "Calling", "warn");
       setBadge(rpsBadge, "Searching", "warn");
       setBadge(suggestionsBadge, "Waiting");
-      copyStatus.textContent = "Generating copy.";
-      segmentStatus.textContent = "Searching RPS.";
-      segmentDetails.innerHTML = '<div class="empty">Searching RPS...</div>';
-      suggestions.innerHTML = '<div class="empty">Waiting for RPS suggestions.</div>';
+      copyStatus.textContent = "Working: Cosmos is drafting a title and body from your intent.";
+      segmentStatus.textContent = "Working: RPS is searching Dynamic Segments that match your intended audience.";
+      segmentDetails.innerHTML = '<div class="empty">Searching RPS. Details will appear here so you can inspect the selected segment.</div>';
+      suggestions.innerHTML = '<div class="empty">Waiting for alternate RPS audience options.</div>';
 
       try {
         const data = await postJson("/api/demo", { intent: value });
         applyCopy(data.copy);
-        copyStatus.textContent = "Copy is editable.";
+        copyStatus.textContent = "Done: copy generated. Title and body are editable, and the phone preview updates as you type.";
         setBadge(copyBadge, "Generated", "ok");
         setVariantControlsEnabled(true);
-        clearVariants("Ready to create content variations.");
+        clearVariants("Ready: choose Yes to create variants from the current editable copy.");
         setBadge(variantsBadge, "Ready");
         setSelectedAudience(data.selected_audience);
         renderSuggestions(data.suggested_audiences);
@@ -1257,13 +1559,14 @@ INDEX_HTML = """
         if (payload.step === "copy") {
           setBadge(copyBadge, "Error", "error");
           setBadge(rpsBadge, "Waiting");
-          copyStatus.textContent = "Copy generation failed.";
+          copyStatus.textContent = "Copy generation failed before RPS search could run.";
           renderError(segmentDetails, payload);
         } else {
           if (payload.copy) {
             applyCopy(payload.copy);
             setBadge(copyBadge, "Generated", "ok");
             setVariantControlsEnabled(true);
+            copyStatus.textContent = "Copy generated, but the audience step needs attention.";
           }
           setBadge(rpsBadge, "Error", "error");
           renderError(segmentDetails, payload);
@@ -1282,13 +1585,13 @@ INDEX_HTML = """
 
       regenButton.disabled = true;
       setBadge(copyBadge, "Regenerating", "warn");
-      copyStatus.textContent = "Calling Cosmos again.";
+      copyStatus.textContent = "Working: asking Cosmos for a fresh title and body using the same intent.";
       try {
         const data = await postJson("/api/copy", { intent: value });
         applyCopy(data.copy);
-        copyStatus.textContent = "Copy regenerated.";
+        copyStatus.textContent = "Done: copy regenerated. You can still edit the title and body directly.";
         setBadge(copyBadge, "Generated", "ok");
-        clearVariants("Copy changed. Create content variations again when ready.");
+        clearVariants("Copy changed. Choose Yes again when you want variants based on the new copy.");
         setBadge(variantsBadge, "Ready");
       } catch (error) {
         const payload = error.payload || { error: error.message };
@@ -1309,7 +1612,7 @@ INDEX_HTML = """
           return;
         }
 
-        segmentStatus.textContent = "Looking up segment.";
+        segmentStatus.textContent = "Working: looking up the segment you typed.";
         setBadge(rpsBadge, "Looking up", "warn");
         try {
           const data = await postJson("/api/segment", { segment_id: value });
@@ -1341,7 +1644,7 @@ INDEX_HTML = """
 
       variantsYes.disabled = true;
       variantsNo.disabled = true;
-      variantsStatus.textContent = "Generating two content variants.";
+      variantsStatus.textContent = "Working: generating two variants from your current editable title and body.";
       setBadge(variantsBadge, "Generating", "warn");
       try {
         const data = await postJson("/api/variants", {
@@ -1350,7 +1653,7 @@ INDEX_HTML = """
           body: copy.body
         });
         renderVariantRow(data.variants || []);
-        variantsStatus.textContent = "Three push notification variants are ready.";
+        variantsStatus.textContent = "Done: control copy plus Variant A and Variant B are ready for review.";
         setBadge(variantsBadge, "Generated", "ok");
       } catch (error) {
         const payload = error.payload || { error: error.message };
@@ -1395,6 +1698,9 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
         if path == "/api/health":
             self._send_json(HTTPStatus.OK, health_payload())
             return
+        if path == "/api/last-workflow":
+            self._send_json(HTTPStatus.OK, last_workflow_payload())
+            return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found."})
 
     def do_POST(self) -> None:
@@ -1431,37 +1737,37 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
         try:
             copy = generate_copy(intent)
         except CosmosLlmError as exc:
-            self._send_json(HTTPStatus.BAD_GATEWAY, copy_error_payload(exc))
+            error_payload = copy_error_payload(exc)
+            record_last_workflow(HTTPStatus.BAD_GATEWAY, intent, error_payload)
+            self._send_json(HTTPStatus.BAD_GATEWAY, error_payload)
             return
 
         copy_payload = copy_response_payload(copy)
         try:
             audience_options = search_audience_options(intent, limit=3)
         except RpsApiError as exc:
-            self._send_json(
-                HTTPStatus.BAD_GATEWAY,
-                {
-                    "step": "rps",
-                    "copy": copy_payload,
-                    "error": str(exc),
-                    "hint": "Confirm VPN/network access to the QA RPS host, then retry.",
-                },
-            )
+            error_payload = {
+                "step": "rps",
+                "copy": copy_payload,
+                "error": str(exc),
+                "hint": "Confirm VPN/network access to the QA RPS host, then retry.",
+            }
+            record_last_workflow(HTTPStatus.BAD_GATEWAY, intent, error_payload)
+            self._send_json(HTTPStatus.BAD_GATEWAY, error_payload)
             return
 
         selected = audience_options[0] if audience_options else None
         suggestions = audience_options[1:]
-        self._send_json(
-            HTTPStatus.OK,
-            {
-                "intent": intent,
-                "copy": copy_payload,
-                "selected_audience": audience_option_payload(selected),
-                "suggested_audiences": [audience_option_payload(option) for option in suggestions],
-                "audience": asdict(selected.recommendation) if selected else None,
-                "model": COSMOS_LLM_MODEL,
-            },
-        )
+        response_payload = {
+            "intent": intent,
+            "copy": copy_payload,
+            "selected_audience": audience_option_payload(selected),
+            "suggested_audiences": [audience_option_payload(option) for option in suggestions],
+            "audience": asdict(selected.recommendation) if selected else None,
+            "model": COSMOS_LLM_MODEL,
+        }
+        record_last_workflow(HTTPStatus.OK, intent, response_payload)
+        self._send_json(HTTPStatus.OK, response_payload)
 
     def _handle_copy(self, payload: dict[str, Any]) -> None:
         intent = str(payload.get("intent", "")).strip()
@@ -1616,6 +1922,66 @@ def audience_option_payload(option: AudienceOption | None) -> dict[str, Any] | N
         "recommendation": asdict(option.recommendation),
         "details": option.details,
     }
+
+
+def last_workflow_payload() -> dict[str, Any]:
+    if LAST_WORKFLOW_RESPONSE is None:
+        return {
+            "captured": False,
+            "message": "No workflow has been generated since the server started.",
+        }
+    return {
+        "captured": True,
+        "workflow": LAST_WORKFLOW_RESPONSE,
+    }
+
+
+def record_last_workflow(status: HTTPStatus, intent: str, response_payload: dict[str, Any]) -> None:
+    global LAST_WORKFLOW_RESPONSE
+
+    captured = {
+        "captured_at": datetime.now(UTC).isoformat(),
+        "status": int(status),
+        "status_text": status.phrase,
+        "intent": intent,
+        "response": response_payload,
+    }
+    LAST_WORKFLOW_RESPONSE = json.loads(json.dumps(captured, ensure_ascii=True))
+    print(workflow_log_line(LAST_WORKFLOW_RESPONSE), flush=True)
+
+
+def workflow_log_line(workflow: dict[str, Any]) -> str:
+    response = workflow.get("response") if isinstance(workflow.get("response"), dict) else {}
+    selected = response.get("selected_audience") if isinstance(response, dict) else None
+    selected_rec = selected.get("recommendation") if isinstance(selected, dict) else None
+    suggestions = response.get("suggested_audiences") if isinstance(response, dict) else []
+    suggestion_codes = []
+    if isinstance(suggestions, list):
+        for option in suggestions:
+            rec = option.get("recommendation") if isinstance(option, dict) else None
+            if isinstance(rec, dict):
+                suggestion_codes.append(str(rec.get("code") or rec.get("segment_id") or ""))
+
+    selected_code = ""
+    selected_id = ""
+    if isinstance(selected_rec, dict):
+        selected_code = str(selected_rec.get("code") or "")
+        selected_id = str(selected_rec.get("segment_id") or "")
+
+    if response.get("error"):
+        outcome = f"error={response.get('error')}"
+    else:
+        outcome = f"selected={selected_code or selected_id or 'none'}"
+        if selected_id:
+            outcome = f"{outcome} ({selected_id})"
+
+    return (
+        "[workflow] "
+        f"status={workflow.get('status')} "
+        f"intent={workflow.get('intent')!r} "
+        f"{outcome} "
+        f"suggestions={', '.join(filter(None, suggestion_codes)) or 'none'}"
+    )
 
 
 def copy_error_payload(exc: CosmosLlmError) -> dict[str, Any]:

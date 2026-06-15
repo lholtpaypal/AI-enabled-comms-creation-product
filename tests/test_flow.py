@@ -371,8 +371,12 @@ def test_search_audience_options_executes_validated_segment_search(monkeypatch) 
     assert requests[0][0] == "POST"
     assert requests[0][1] == "/segments/search"
     assert requests[0][2]["filters"]["type"] == ["dynamic_segment"]
-    assert requests[1][1] == "/segments"
-    assert requests[1][2]["segment_codes"]
+    search_requests = [request for request in requests if request[1] == "/segments/search"]
+    enrich_requests = [request for request in requests if request[1] == "/segments"]
+    assert len(search_requests) >= 2
+    assert enrich_requests
+    assert enrich_requests[0][2]["segment_codes"]
+    assert all("get_all_segments" not in payload for _, _, payload in requests)
     assert [option.recommendation.segment_id for option in options] == ["DS-2", "DS-3", "DS-1"]
 
 
