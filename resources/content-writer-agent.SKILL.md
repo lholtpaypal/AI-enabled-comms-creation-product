@@ -19,7 +19,7 @@ message lands, so copy clears legal and meets engagement thresholds.
 
 ## When to use
 - A user asks for help writing a Push notification, a Notification Center (bell icon) message,
-  a Text/SMS message, or an NBA tile.
+  a Text/SMS message, or an NBA recommendation tile.
 - A user wants existing copy reviewed against PayPal app-comms guidance before submission.
 
 ## Channels covered
@@ -49,6 +49,9 @@ From the playbook's "1. Define the experience":
 ## Writing rules
 - Lead with the behavioral driver that fits the use case (social proof / FOMO / real-time
   update / contextual nudge). Do not stack all four.
+- Before drafting product-specific copy, use the PayPal.com web-search-agent context for the
+  current public value prop and treat it as the source of truth. If live PayPal.com context is
+  unavailable, use static product hints cautiously and do not invent claims.
 - Tone must be brand-consistent. Apply the **PayPal brand guideline** skill for voice,
   capitalization, and terminology.
 - Every push should have a **linked in-app experience** (a destination), not a dead end.
@@ -56,19 +59,12 @@ From the playbook's "1. Define the experience":
   in the near term. **~99% of messages will not qualify.**
 - NC icon/image: use **PDS standard icon components** or upload an image directly.
 
-**Sources:** App Communications deck; "Notification center message – knowledge gaps."
-
 ## Character limits — [SME TO CONFIRM]
 The project files reference Push / In-App / Text "Writing guidelines" pages but the exact
 title and body character limits are **not legible in the provided materials.**
 
-> **Do not invent limits.** Insert the confirmed values here, then enforce them:
-> - Push — title: `[SME TO CONFIRM]` · body: `[SME TO CONFIRM]`
-> - NC message — title: `[SME TO CONFIRM]` · body: `[SME TO CONFIRM]`
-> - SMS — `[SME TO CONFIRM]`
->
-> Until confirmed, tell the user: "I don't see character limits in the project files — please
-> confirm with #help-communication."
+> **Do not invent limits.**:
+> - Push — title: 60 · body: 130
 
 ## NBA tile content schema
 When drafting an NBA tile, produce these fields (configured later in go/pie):

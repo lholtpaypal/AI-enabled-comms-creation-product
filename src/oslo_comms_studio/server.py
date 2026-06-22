@@ -11,25 +11,50 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import quote, urlparse
 
+import requests
+import urllib3
+
 from oslo_comms_studio.app import (
     COSMOS_LLM_API_KEY_ENV,
     COSMOS_LLM_BASE_URL,
     COSMOS_LLM_MAX_TOKENS,
     COSMOS_LLM_MODEL,
+    DEEPLINK_CATALOG_DATA_URL,
+    DEEPLINK_CATALOG_URL,
     DEFAULT_INTENT,
     DYNSEG_BASE_URL,
+    PROJECT_ROOT,
     AudienceOption,
     CopyDraft,
     CosmosLlmError,
+    DeeplinkCatalogError,
+    DeeplinkOption,
     RpsApiError,
     cosmos_api_key,
     generate_copy,
     generate_copy_variants,
     get_dynamic_segment,
     search_audience_options,
+    search_deeplink_options,
 )
 
-DEMO_SERVER_VERSION = "blank-startup-preview-v9"
+DEMO_SERVER_VERSION = "transcript-demo-v18"
+AGENTIC_CAMPAIGN_PATH = PROJECT_ROOT / "resources" / "agentic_comms_test.json"
+REFERENCE_CAMPAIGN_PATH = AGENTIC_CAMPAIGN_PATH
+CAMPAIGN_MANAGEMENT_BASE_URL = os.getenv(
+    "CAMPAIGN_MANAGEMENT_BASE_URL",
+    "https://te-campaign-management-3.qa.paypal.com:16223/v1/communications/campaign",
+).rstrip("/")
+CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS = float(
+    os.getenv("CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS", "45")
+)
+CAMPAIGN_MANAGEMENT_USER_DETAILS = os.getenv(
+    "CAMPAIGN_MANAGEMENT_USER_DETAILS",
+    json.dumps(
+        {"LOGGED_IN_USER": "lholt", "USER_ROLES": ["PP_SSO_COMMS_ADMIN"]},
+        separators=(",", ":"),
+    ),
+)
 LAST_WORKFLOW_RESPONSE: dict[str, Any] | None = None
 PAYPAL_LOGO_SVG = """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72">
@@ -221,9 +246,41 @@ INDEX_HTML = """
       min-width: 0;
     }
 
-    .support-grid {
+    .demo-layout.guided-start {
+      grid-template-columns: minmax(0, 820px);
+      justify-content: center;
+    }
+
+    .guide-card {
       display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+      gap: 6px;
+      border: 1px solid #b9d8ff;
+      border-radius: 8px;
+      background: #eef6ff;
+      padding: 14px 16px;
+      color: #344054;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .guide-card strong {
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.25;
+    }
+
+    .guide-step {
+      color: var(--accent-dark);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .support-grid,
+    .audience-stack {
+      display: grid;
+      grid-template-columns: 1fr;
       gap: 14px;
       align-items: start;
     }
@@ -430,6 +487,15 @@ INDEX_HTML = """
       line-height: 1.45;
     }
 
+    .json-output {
+      min-height: 300px;
+      margin-top: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre;
+    }
+
     input {
       min-height: 42px;
       padding: 0 12px;
@@ -469,6 +535,10 @@ INDEX_HTML = """
       flex-wrap: wrap;
     }
 
+    .package-actions {
+      justify-content: flex-start;
+    }
+
     .primary,
     .secondary,
     .suggestion {
@@ -483,37 +553,30 @@ INDEX_HTML = """
       padding: 0 15px;
     }
 
-    .primary {
-      border: 0;
+    .primary,
+    .secondary,
+    .choice-button.yes {
+      border: 1px solid var(--accent);
       background: var(--accent);
       color: #fff;
     }
 
-    .primary:hover {
+    .primary:hover:not(:disabled),
+    .secondary:hover:not(:disabled),
+    .choice-button.yes:hover:not(:disabled) {
+      border-color: var(--accent-dark);
       background: var(--accent-dark);
     }
 
-    .secondary {
-      border: 1px solid #b9c3d0;
-      background: #fff;
-      color: var(--ink);
-    }
-
     .choice-button {
-      min-height: 36px;
       border: 1px solid #b9c3d0;
       border-radius: 8px;
       background: #fff;
       color: var(--ink);
+      min-height: 36px;
       padding: 0 14px;
       cursor: pointer;
       font-weight: 750;
-    }
-
-    .choice-button.yes {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
     }
 
     .primary:disabled,
@@ -635,6 +698,12 @@ INDEX_HTML = """
       box-shadow: 0 0 0 3px rgba(0, 112, 224, 0.12);
     }
 
+    .suggestion.selected {
+      border-color: var(--accent);
+      background: #eef6ff;
+      box-shadow: 0 0 0 3px rgba(0, 112, 224, 0.1);
+    }
+
     .suggestion strong {
       font-size: 14px;
       line-height: 1.25;
@@ -645,6 +714,21 @@ INDEX_HTML = """
       color: var(--muted);
       font-size: 12px;
       line-height: 1.35;
+    }
+
+    .suggestion code {
+      color: #1d2939;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+
+    .deeplink-choice {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
     }
 
     .empty,
@@ -1058,65 +1142,63 @@ INDEX_HTML = """
 
     <section class="intro-strip" aria-label="How to use this page">
       <h2>
-        Create from intent
-        <span class="help-tip" tabindex="0" aria-label="Page overview help" data-tooltip="Start at step 1 and work down the page. Every generated output is visible, and editable fields are marked.">?</span>
+        Create a push notification
+        <span class="help-tip" tabindex="0" aria-label="Page overview help" data-tooltip="The page reveals each next action after you complete each step. Start with campaign context, then move through copy, variants, audience, deeplink, and the upload JSON package.">?</span>
       </h2>
-      <p>Start with a plain-English campaign request. The tool uses that intent to assemble the first pass, but it does not hide the work: you can see and edit the copy, inspect the audience, compare alternatives, and decide whether variants are needed.</p>
-      <ol aria-label="Workflow summary">
-        <li><strong>1. Write the intent</strong> Say what you want to create, who it is for, and what the customer should do.</li>
-        <li><strong>2. Generate the workflow</strong> Cosmos drafts copy while RPS searches for matching Dynamic Segments.</li>
-        <li><strong>3. Edit the copy</strong> Title and body are editable, and the phone preview updates immediately.</li>
-        <li><strong>4. Inspect the audience</strong> The selected RPS segment ID and read-only RPS details are shown before you trust it.</li>
-        <li><strong>5. Compare alternatives</strong> Suggested audience options are clickable if another segment fits better.</li>
-        <li><strong>6. Create variants</strong> Choose whether to generate A/B copy variants from the current edited copy.</li>
-      </ol>
+      <p>Start with one plain-English request. The rest of the demo stays hidden until the first copy draft is ready.</p>
     </section>
 
-    <div class="demo-layout">
+    <div id="demoLayout" class="demo-layout guided-start">
       <div class="workflow">
+        <section class="guide-card" aria-live="polite">
+          <span id="guideStep" class="guide-step">Step 1 of 4</span>
+          <strong id="guideTitle">Provide the context</strong>
+          <span id="guideBody">Tell us who you want to reach, which PayPal product matters, and what you want the customer to do.</span>
+        </section>
+
         <form id="intentForm" class="panel">
           <div class="panel-header">
             <h2 class="panel-title">
               <span class="step-number">1</span>
-              Intent
-              <span class="help-tip" tabindex="0" aria-label="Intent help" data-tooltip="Describe the campaign in plain English. Include message type, audience, product or feature, and what the customer should do. You do not need final copy or an RPS segment ID yet.">?</span>
+              Context
+              <span class="help-tip" tabindex="0" aria-label="Context help" data-tooltip="Describe your campaign in plain English. Include message type, audience, product or feature, and what you want the customer to do. You do not need final copy or an RPS segment ID yet.">?</span>
             </h2>
             <span class="badge" id="modelBadge">Localhost</span>
           </div>
           <div class="panel-body">
-            <p class="section-help">Describe the campaign.</p>
+            <p class="section-help">Give the content writer enough context to draft the push.</p>
             <label for="intent">
-              Campaign intent
-              <span class="field-tag">Editable</span>
-              <span class="help-tip" tabindex="0" aria-label="Campaign intent field help" data-tooltip="This is the main input. More specific intent gives the tool better context for copy, audience search, deeplink assumptions, and variants.">?</span>
+              Campaign context
+              <span class="field-tag">Required</span>
+              <span class="help-tip" tabindex="0" aria-label="Campaign context field help" data-tooltip="This is the main input. More specific context gives the tool better copy, audience search, deeplink assumptions, and variants.">?</span>
             </label>
-            <textarea id="intent" name="intent" spellcheck="true" placeholder="Example: Create a push notification for eligible US customers who have not enrolled in the PayPal Debit Card. Goal: get them to start enrollment. Tone: clear and helpful.">__DEFAULT_INTENT__</textarea>
+            <textarea id="intent" name="intent" spellcheck="true" placeholder="Example: I want to encourage eligible US customers to use PayPal's Buy Now, Pay Later for the first time.">__DEFAULT_INTENT__</textarea>
             <details class="example-list" aria-label="Campaign intent examples">
               <summary>Need examples? Open this.</summary>
               <ul>
+                <li>I want to encourage eligible US customers to use PayPal's Buy Now, Pay Later for the first time.</li>
                 <li>Create a push notification for eligible US customers who have not enrolled in PayPal Debit Card. Goal: get them to start enrollment.</li>
-                <li>Create an app tile for customers who used Pay Later last month. Goal: remind them that a new promo is available.</li>
-                <li>Create an email for small business sellers with high checkout volume. Goal: introduce a working-capital offer. Keep the tone practical.</li>
+                <li>Create a push notification nudging users to pay someone from the PayPal app.</li>
               </ul>
             </details>
             <div class="actions">
-              <button id="submitButton" class="primary" type="submit">Generate workflow</button>
+              <button id="submitButton" class="primary" type="submit">Generate copy</button>
               <span id="workflowStatus" class="status">Waiting for your campaign intent.</span>
             </div>
           </div>
         </form>
 
-        <section class="panel">
+        <section id="copyPanel" class="panel" hidden>
           <div class="panel-header">
             <h2 class="panel-title">
               <span class="step-number">2</span>
               Copy
-              <span class="help-tip" tabindex="0" aria-label="Copy help" data-tooltip="Cosmos drafts the title and body from your intent. Treat the generated text as a starting point. Both fields are editable, and the phone preview updates as you type.">?</span>
+              <span class="help-tip" tabindex="0" aria-label="Copy help" data-tooltip="Cosmos drafts the title and body from your intent. Treat your generated text as a starting point. Both fields are editable, and the phone preview updates as you type.">?</span>
             </h2>
             <span id="copyBadge" class="badge">Waiting</span>
           </div>
           <div class="panel-body">
-            <p class="section-help">Edit the generated message.</p>
+            <p class="section-help">Edit your generated message.</p>
             <div class="copy-fields">
               <div>
                 <label for="copyTitle">
@@ -1137,23 +1219,44 @@ INDEX_HTML = """
             </div>
             <div class="actions">
               <button id="regenButton" class="secondary" type="button" disabled>Regenerate copy text</button>
-              <span id="copyStatus" class="status">Run step 1 to generate editable copy.</span>
+              <span id="copyStatus" class="status">Generate copy first, then edit it here.</span>
+            </div>
+            <div id="variantPanel" class="variant-panel" hidden>
+              <div class="variant-question">
+                <div>
+                  <strong>
+                    Add copy variations?
+                    <span class="help-tip" tabindex="0" aria-label="Create variants help" data-tooltip="Choose Yes to generate Variant A and Variant B from the current editable title and body. Choose No to keep the current copy as the only version.">?</span>
+                  </strong>
+                  <p>Variants stay tied to the message copy, so experimentation is handled before audience and deeplink setup.</p>
+                </div>
+                <div class="button-row">
+                  <button id="variantsYes" class="choice-button yes" type="button" disabled>Yes</button>
+                  <button id="variantsNo" class="choice-button" type="button" disabled>No</button>
+                  <button id="continueAudienceButton" class="secondary" type="button" disabled>Continue to audience</button>
+                </div>
+              </div>
+              <div class="actions">
+                <span id="variantsStatus" class="status">Generate copy first. Variants use your editable title and body.</span>
+                <span id="variantsBadge" class="badge">Waiting</span>
+              </div>
+              <div id="variantRow" class="variant-row" hidden></div>
             </div>
           </div>
         </section>
 
-        <div class="support-grid">
+        <div id="audienceStep" class="audience-stack" hidden>
           <section class="panel">
             <div class="panel-header">
               <h2 class="panel-title">
                 <span class="step-number">3</span>
-                Audience
-                <span class="help-tip" tabindex="0" aria-label="Audience help" data-tooltip="The audience controls who receives the message. The tool searches RPS Dynamic Segments from your intent, then shows the selected segment so you can inspect it.">?</span>
+                Find audience
+                <span class="help-tip" tabindex="0" aria-label="Audience help" data-tooltip="Your audience controls who receives the message. We search RPS Dynamic Segments from your context, then show one suggested segment so you can inspect it.">?</span>
               </h2>
               <span id="rpsBadge" class="badge">Waiting</span>
             </div>
             <div class="panel-body">
-              <p class="section-help">Review the selected segment.</p>
+              <p class="section-help">Find one RPS Dynamic Segment for the demo, or paste the segment you already want to use.</p>
               <div class="split">
                 <div>
                   <label for="segmentId">
@@ -1163,7 +1266,8 @@ INDEX_HTML = """
                   </label>
                   <input id="segmentId" type="text" autocomplete="off" placeholder="Paste a Dynamic Segment ID or code">
                   <div class="actions">
-                    <span id="segmentStatus" class="status">Run step 1 to let RPS choose a segment, or paste a segment ID yourself.</span>
+                    <button id="findRpsButton" class="secondary" type="button">Find RPS segment</button>
+                    <span id="segmentStatus" class="status">Click Find RPS segment to search, or paste a segment ID yourself.</span>
                   </div>
                 </div>
                 <div>
@@ -1173,37 +1277,93 @@ INDEX_HTML = """
                     <span class="help-tip" tabindex="0" aria-label="RPS details help" data-tooltip="These are facts returned by RPS. Check the code, description, count, status, country, owner, and refresh timing before trusting the audience.">?</span>
                   </label>
                   <div id="segmentDetails" class="details-box">
-                    <div class="empty">No segment selected yet. After the workflow runs, this box will explain exactly which RPS segment was found.</div>
+                    <div class="empty">No segment selected yet. After you run RPS search, this box will explain exactly which RPS segment was found.</div>
                   </div>
                 </div>
               </div>
             </div>
           </section>
 
-          <section class="panel">
-            <div class="panel-header">
-              <h2 class="panel-title">
-                <span class="step-number">4</span>
-                Alternatives
-                <span class="help-tip" tabindex="0" aria-label="Alternative audiences help" data-tooltip="These are other RPS segments that looked relevant. Click one if its description fits the campaign better than the current selection.">?</span>
-              </h2>
-              <span id="suggestionsBadge" class="badge">Waiting</span>
-            </div>
-            <div class="panel-body">
-              <p class="section-help">Optional audience swaps.</p>
-              <div id="suggestions" class="suggestions">
-                <div class="empty">Run step 1 to see suggested audiences.</div>
-              </div>
-            </div>
-          </section>
         </div>
+
+        <section id="deeplinkPanel" class="panel" hidden>
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <span class="step-number">3</span>
+              Deeplink
+              <span class="help-tip" tabindex="0" aria-label="Deeplink help" data-tooltip="Use your existing deeplink if you already have one. Otherwise we fetch the Oslo deeplink catalog, rank registered app pages against your intent, and return the two most likely destinations.">?</span>
+            </h2>
+            <span id="deeplinkBadge" class="badge">Waiting</span>
+          </div>
+          <div class="panel-body">
+            <p class="section-help">Choose where your push should send people.</p>
+            <div class="deeplink-choice" aria-label="Deeplink source choice">
+              <button id="manualDeeplinkButton" class="choice-button" type="button">I have a deeplink</button>
+              <button id="searchDeeplinkButton" class="choice-button yes" type="button">Find deeplink</button>
+            </div>
+            <label for="deeplinkUrl">
+              Deeplink URL
+              <span class="field-tag">Editable</span>
+              <span class="help-tip" tabindex="0" aria-label="Deeplink URL help" data-tooltip="The recommended URL appears here. You can paste your own deeplink or click a catalog candidate to replace it.">?</span>
+            </label>
+            <input id="deeplinkUrl" type="url" autocomplete="off" placeholder="Catalog recommendation or pasted deeplink appears here">
+            <div class="actions">
+              <span id="deeplinkStatus" class="status">Paste your own deeplink, or click Find deeplink to search the Oslo catalog.</span>
+            </div>
+            <div id="deeplinkCandidates" class="suggestions">
+              <div class="empty">No deeplink selected yet.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="packagePanel" class="panel" hidden>
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <span class="step-number">4</span>
+              Upload JSON
+              <span class="help-tip" tabindex="0" aria-label="Upload JSON help" data-tooltip="This builds a demo upload package from the agentic campaign template. The target audience and other campaign settings stay hard-coded; only the push copy and deeplink are replaced.">?</span>
+            </h2>
+            <span id="packageBadge" class="badge">Waiting</span>
+          </div>
+          <div class="panel-body">
+            <p class="section-help">Build the demo JSON package for PStudio upload.</p>
+            <div class="actions">
+              <button id="buildPackageButton" class="primary" type="button">Build upload JSON</button>
+              <span id="packageStatus" class="status">Waiting for title, body, and deeplink.</span>
+            </div>
+            <textarea id="packageJson" class="json-output" readonly spellcheck="false" placeholder="The generated campaign JSON appears here."></textarea>
+            <div class="actions package-actions">
+              <button id="copyPackageButton" class="secondary" type="button" disabled>Copy JSON</button>
+              <button id="downloadPackageButton" class="secondary" type="button" disabled>Download JSON</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="createCampaignPanel" class="panel" hidden>
+          <div class="panel-header">
+            <h2 class="panel-title">
+              <span class="step-number">4</span>
+              Create Campaign
+              <span class="help-tip" tabindex="0" aria-label="Create campaign help" data-tooltip="This PATCHes the QA campaign using the agentic_comms_test template. Only the push title, push body, deeplink, and selected RPS segment ID/code are replaced in the request body.">?</span>
+            </h2>
+            <span id="createCampaignBadge" class="badge">Waiting</span>
+          </div>
+          <div class="panel-body">
+            <p class="section-help">PATCH campaign 9855711573 in QA with the reviewed copy, deeplink, and selected RPS segment.</p>
+            <div class="actions">
+              <button id="createCampaignButton" class="primary" type="button">Create Campaign</button>
+              <span id="createCampaignStatus" class="status">Waiting for generated title, body, deeplink, and selected RPS segment.</span>
+            </div>
+            <textarea id="createCampaignResult" class="json-output" readonly spellcheck="false" hidden placeholder="The API response appears here."></textarea>
+          </div>
+        </section>
       </div>
 
-      <aside class="phone-panel" aria-label="Push notification preview">
+      <aside id="previewPanel" class="phone-panel" aria-label="Push notification preview" hidden>
         <div class="preview-note">
           <strong>
             Live preview
-            <span class="help-tip" tabindex="0" aria-label="Live preview help" data-tooltip="This mock phone shows how the current title and body read on a lock screen. It updates immediately when you edit copy.">?</span>
+            <span class="help-tip" tabindex="0" aria-label="Live preview help" data-tooltip="This mock phone shows how your current title and body read on a lock screen. It updates immediately when you edit copy.">?</span>
           </strong>
         </div>
         <div class="phone-shell">
@@ -1240,35 +1400,6 @@ INDEX_HTML = """
       </aside>
     </div>
 
-    <section class="panel variant-panel">
-      <div class="panel-header">
-        <h2 class="panel-title">
-          <span class="step-number">5</span>
-          Variants
-          <span class="help-tip" tabindex="0" aria-label="Variants help" data-tooltip="Variants test different ways to say the same thing. The current title and body, including edits you made, become the control copy.">?</span>
-        </h2>
-        <span id="variantsBadge" class="badge">Waiting</span>
-      </div>
-      <div class="panel-body">
-        <p class="section-help">Create A/B copy options.</p>
-        <div class="variant-question">
-          <div>
-            <strong>
-              Create two variants?
-              <span class="help-tip" tabindex="0" aria-label="Create variants help" data-tooltip="Choose Yes to generate Variant A and Variant B. Choose No if the current copy should remain the only version.">?</span>
-            </strong>
-          </div>
-          <div class="button-row">
-            <button id="variantsYes" class="choice-button yes" type="button" disabled>Yes</button>
-            <button id="variantsNo" class="choice-button" type="button" disabled>No</button>
-          </div>
-        </div>
-        <div class="actions">
-          <span id="variantsStatus" class="status">Run step 1 first. Variants use the editable copy from step 2.</span>
-        </div>
-        <div id="variantRow" class="variant-row" hidden></div>
-      </div>
-    </section>
   </main>
 
   <script>
@@ -1278,27 +1409,56 @@ INDEX_HTML = """
     const regenButton = document.querySelector("#regenButton");
     const copyTitle = document.querySelector("#copyTitle");
     const copyBody = document.querySelector("#copyBody");
+    const demoLayout = document.querySelector("#demoLayout");
+    const copyPanel = document.querySelector("#copyPanel");
+    const audienceStep = document.querySelector("#audienceStep");
+    const deeplinkPanel = document.querySelector("#deeplinkPanel");
+    const packagePanel = document.querySelector("#packagePanel");
+    const variantPanel = document.querySelector("#variantPanel");
+    const previewPanel = document.querySelector("#previewPanel");
+    const guideStep = document.querySelector("#guideStep");
+    const guideTitle = document.querySelector("#guideTitle");
+    const guideBody = document.querySelector("#guideBody");
     const previewTitle = document.querySelector("#previewTitle");
     const previewBody = document.querySelector("#previewBody");
     const segmentId = document.querySelector("#segmentId");
     const segmentDetails = document.querySelector("#segmentDetails");
-    const suggestions = document.querySelector("#suggestions");
+    const findRpsButton = document.querySelector("#findRpsButton");
+    const deeplinkUrl = document.querySelector("#deeplinkUrl");
+    const manualDeeplinkButton = document.querySelector("#manualDeeplinkButton");
+    const searchDeeplinkButton = document.querySelector("#searchDeeplinkButton");
+    const deeplinkCandidates = document.querySelector("#deeplinkCandidates");
+    const buildPackageButton = document.querySelector("#buildPackageButton");
+    const packageJson = document.querySelector("#packageJson");
+    const packageStatus = document.querySelector("#packageStatus");
+    const packageBadge = document.querySelector("#packageBadge");
+    const copyPackageButton = document.querySelector("#copyPackageButton");
+    const downloadPackageButton = document.querySelector("#downloadPackageButton");
+    const createCampaignPanel = document.querySelector("#createCampaignPanel");
+    const createCampaignButton = document.querySelector("#createCampaignButton");
+    const createCampaignStatus = document.querySelector("#createCampaignStatus");
+    const createCampaignBadge = document.querySelector("#createCampaignBadge");
+    const createCampaignResult = document.querySelector("#createCampaignResult");
     const workflowStatus = document.querySelector("#workflowStatus");
     const copyStatus = document.querySelector("#copyStatus");
     const segmentStatus = document.querySelector("#segmentStatus");
+    const deeplinkStatus = document.querySelector("#deeplinkStatus");
     const copyBadge = document.querySelector("#copyBadge");
     const rpsBadge = document.querySelector("#rpsBadge");
-    const suggestionsBadge = document.querySelector("#suggestionsBadge");
+    const deeplinkBadge = document.querySelector("#deeplinkBadge");
     const healthDot = document.querySelector("#healthDot");
     const healthText = document.querySelector("#healthText");
     const modelBadge = document.querySelector("#modelBadge");
     const variantsYes = document.querySelector("#variantsYes");
     const variantsNo = document.querySelector("#variantsNo");
+    const continueAudienceButton = document.querySelector("#continueAudienceButton");
     const variantsBadge = document.querySelector("#variantsBadge");
     const variantsStatus = document.querySelector("#variantsStatus");
     const variantRow = document.querySelector("#variantRow");
 
-    let activeSuggestions = [];
+    let activeDeeplinkOptions = [];
+    let currentPackage = null;
+    let selectedAudienceOption = null;
     let segmentLookupTimer = null;
     let suppressSegmentLookup = false;
 
@@ -1316,12 +1476,34 @@ INDEX_HTML = """
       element.className = `badge ${state}`.trim();
     }
 
+    function reveal(element) {
+      if (element) element.hidden = false;
+    }
+
+    function conceal(element) {
+      if (element) element.hidden = true;
+    }
+
+    function setGuide(step, title, body) {
+      guideStep.textContent = step;
+      guideTitle.textContent = title;
+      guideBody.textContent = body;
+    }
+
+    function focusStep(element) {
+      if (!element || element.hidden) return;
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     function setWorkflowLoading(isLoading) {
       submitButton.disabled = isLoading;
       regenButton.disabled = isLoading || !intent.value.trim();
+      findRpsButton.disabled = isLoading;
+      searchDeeplinkButton.disabled = isLoading;
+      manualDeeplinkButton.disabled = isLoading;
       workflowStatus.textContent = isLoading
-        ? "Working: using your intent to ask Cosmos for copy and RPS for audience matches."
-        : "Ready for edits or another workflow run.";
+        ? "Working: asking Cosmos to draft the push title and body."
+        : "Ready for edits or the next agent step.";
     }
 
     function updatePreview() {
@@ -1345,6 +1527,35 @@ INDEX_HTML = """
     function setVariantControlsEnabled(isEnabled) {
       variantsYes.disabled = !isEnabled;
       variantsNo.disabled = !isEnabled;
+      continueAudienceButton.disabled = !isEnabled;
+    }
+
+    function showAudienceStep() {
+      reveal(audienceStep);
+      setGuide("Step 3 of 4", "Find audience and deeplink", "Find one RPS segment for the demo, then choose or paste the landing page.");
+      focusStep(audienceStep);
+    }
+
+    function resetPackage(shouldHide = true) {
+      currentPackage = null;
+      packageJson.value = "";
+      packageStatus.textContent = "Waiting for title, body, and deeplink.";
+      setBadge(packageBadge, "Waiting");
+      copyPackageButton.disabled = true;
+      downloadPackageButton.disabled = true;
+      if (shouldHide) {
+        conceal(packagePanel);
+      }
+    }
+
+    function resetCreateCampaign(shouldHide = true) {
+      createCampaignResult.value = "";
+      createCampaignResult.hidden = true;
+      createCampaignStatus.textContent = "Waiting for generated title, body, deeplink, and selected RPS segment.";
+      setBadge(createCampaignBadge, "Waiting");
+      if (shouldHide) {
+        conceal(createCampaignPanel);
+      }
     }
 
     function formatValue(value) {
@@ -1362,10 +1573,21 @@ INDEX_HTML = """
       return option?.recommendation || option || null;
     }
 
+    function selectedSegmentPayload() {
+      const recommendation = optionRecommendation(selectedAudienceOption);
+      const details = selectedAudienceOption?.details || {};
+      const typedValue = segmentId.value.trim();
+      const typedLooksLikeId = typedValue.toUpperCase().startsWith("DS-");
+      return {
+        segment_id: String(recommendation?.segment_id || details.id || (typedLooksLikeId ? typedValue : "")).trim(),
+        segment_code: String(recommendation?.code || details.code || (!typedLooksLikeId ? typedValue : "")).trim()
+      };
+    }
+
     function renderSegmentDetails(option) {
       const recommendation = optionRecommendation(option);
       if (!recommendation) {
-        segmentDetails.innerHTML = '<div class="empty">No segment selected yet. After the workflow runs, this box will explain exactly which RPS segment was found.</div>';
+        segmentDetails.innerHTML = '<div class="empty">No segment selected yet. After you run RPS search, this box will explain exactly which RPS segment was found.</div>';
         return;
       }
 
@@ -1414,12 +1636,17 @@ INDEX_HTML = """
     function setSelectedAudience(option, shouldUpdateInput = true) {
       const recommendation = optionRecommendation(option);
       if (!recommendation) {
-        segmentStatus.textContent = "No segment selected. Paste a Dynamic Segment ID or choose a suggestion when one is available.";
+        selectedAudienceOption = null;
+        segmentStatus.textContent = "No segment selected. Paste a Dynamic Segment ID or run RPS search.";
         setBadge(rpsBadge, "No match", "warn");
         renderSegmentDetails(null);
+        conceal(deeplinkPanel);
+        resetPackage();
+        resetCreateCampaign();
         return;
       }
 
+      selectedAudienceOption = option;
       if (shouldUpdateInput) {
         suppressSegmentLookup = true;
         segmentId.value = recommendation.segment_id || "";
@@ -1432,27 +1659,98 @@ INDEX_HTML = """
         : "Done: selected an audience. This field is editable if you want to replace it.";
       setBadge(rpsBadge, "Selected", "ok");
       renderSegmentDetails(option);
+      reveal(deeplinkPanel);
+      if (deeplinkUrl.value.trim()) {
+        reveal(createCampaignPanel);
+        resetCreateCampaign(false);
+      }
+      setGuide("Step 3 of 4", "Choose your landing page", "Paste a deeplink if you already have one, or run the Oslo catalog search to find the best registered app page.");
+      focusStep(deeplinkPanel);
     }
 
-    function renderSuggestions(options) {
-      activeSuggestions = options || [];
-      if (!activeSuggestions.length) {
-        suggestions.innerHTML = '<div class="empty">No alternate dynamic audiences returned. The selected segment in step 3 is the only match the search returned.</div>';
-        setBadge(suggestionsBadge, "No options", "warn");
+    function resetAudienceSearch() {
+      selectedAudienceOption = null;
+      segmentId.value = "";
+      segmentStatus.textContent = "Click Find RPS segment to search, or paste a segment ID yourself.";
+      setBadge(rpsBadge, "Waiting");
+      renderSegmentDetails(null);
+      conceal(deeplinkPanel);
+      resetPackage();
+      resetCreateCampaign();
+    }
+
+    function deeplinkRecommendation(option) {
+      return option?.recommendation || option || null;
+    }
+
+    function deeplinkOptionList(data) {
+      if (Array.isArray(data?.deeplink_options)) return data.deeplink_options;
+      return [data?.selected_deeplink, ...(data?.suggested_deeplinks || [])].filter(Boolean);
+    }
+
+    function formatDeeplinkParams(params) {
+      if (!Array.isArray(params) || !params.length) return "Required params: none";
+      return `Required params: ${params.map((param) => param.url_param || param.property || "unnamed").join(", ")}`;
+    }
+
+    function setSelectedDeeplink(option, shouldUpdateInput = true) {
+      const recommendation = deeplinkRecommendation(option);
+      if (!recommendation) {
+        deeplinkStatus.textContent = "No deeplink selected. Paste your own URL or search the Oslo catalog.";
+        setBadge(deeplinkBadge, "No match", "warn");
+        if (shouldUpdateInput) deeplinkUrl.value = "";
         return;
       }
 
-      suggestions.innerHTML = activeSuggestions.map((option, index) => {
-        const recommendation = optionRecommendation(option);
+      if (shouldUpdateInput) {
+        deeplinkUrl.value = recommendation.url || "";
+      }
+      deeplinkStatus.textContent = recommendation.url
+        ? `Done: selected ${recommendation.path || recommendation.url}. You can edit your URL before handoff.`
+        : "Done: selected a catalog destination. Confirm your URL before handoff.";
+      setBadge(deeplinkBadge, recommendation.confidence || "Selected", "ok");
+      renderDeeplinkOptions(activeDeeplinkOptions, recommendation.path);
+      reveal(createCampaignPanel);
+      resetCreateCampaign(false);
+      reveal(packagePanel);
+      resetPackage(false);
+      setGuide("Step 4 of 4", "Create the campaign", "PATCH the QA campaign with your reviewed copy, deeplink, and selected RPS segment.");
+      focusStep(createCampaignPanel);
+    }
+
+    function renderDeeplinkOptions(options, selectedPath = "") {
+      activeDeeplinkOptions = options || [];
+      if (!activeDeeplinkOptions.length) {
+        deeplinkCandidates.innerHTML = '<div class="empty">No catalog candidates yet. Choose Find deeplink when your intent and copy are ready.</div>';
+        setBadge(deeplinkBadge, "Waiting");
+        return;
+      }
+
+      deeplinkCandidates.innerHTML = activeDeeplinkOptions.map((option, index) => {
+        const recommendation = deeplinkRecommendation(option);
+        const label = index === 0 ? "Recommended destination" : "Alternative destination";
+        const selectedClass = recommendation.path === selectedPath ? " selected" : "";
         return `
-          <button class="suggestion" type="button" data-index="${index}">
-            <strong>${escapeHtml(recommendation.code || recommendation.segment_id)}</strong>
-            <span>${escapeHtml(recommendation.description || "No description returned.")}</span>
-            <span>Click to use this segment. ${escapeHtml(recommendation.segment_id)} · ${escapeHtml(recommendation.audience_count || "Unavailable")}</span>
+          <button class="suggestion${selectedClass}" type="button" data-deeplink-index="${index}">
+            <strong>${escapeHtml(label)} · ${escapeHtml(recommendation.confidence || "Medium")} confidence</strong>
+            <code>${escapeHtml(recommendation.url || "")}</code>
+            <span>${escapeHtml(recommendation.path || "No path")} · ${escapeHtml(recommendation.destination || "No destination")} · ${escapeHtml(recommendation.link_type || "Unknown type")}</span>
+            <span>${escapeHtml(formatDeeplinkParams(recommendation.required_params))}</span>
+            <span>${escapeHtml(recommendation.rationale || "Catalog-backed candidate.")}</span>
           </button>
         `;
       }).join("");
-      setBadge(suggestionsBadge, `${activeSuggestions.length} options`, "ok");
+      setBadge(deeplinkBadge, `${activeDeeplinkOptions.length} options`, "ok");
+    }
+
+    function resetDeeplinkSearch() {
+      activeDeeplinkOptions = [];
+      deeplinkUrl.value = "";
+      deeplinkStatus.textContent = "Paste your own deeplink, or click Find deeplink to search the Oslo catalog.";
+      setBadge(deeplinkBadge, "Waiting");
+      deeplinkCandidates.innerHTML = '<div class="empty">No deeplink selected yet.</div>';
+      resetPackage();
+      resetCreateCampaign();
     }
 
     function renderError(target, data) {
@@ -1531,46 +1829,37 @@ INDEX_HTML = """
       event.preventDefault();
       const value = intent.value.trim();
       if (!value) {
-        workflowStatus.textContent = "Enter an intent first.";
+        workflowStatus.textContent = "Enter your intent first.";
         return;
       }
 
       setWorkflowLoading(true);
       setBadge(copyBadge, "Calling", "warn");
-      setBadge(rpsBadge, "Searching", "warn");
-      setBadge(suggestionsBadge, "Waiting");
       copyStatus.textContent = "Working: Cosmos is drafting a title and body from your intent.";
-      segmentStatus.textContent = "Working: RPS is searching Dynamic Segments that match your intended audience.";
-      segmentDetails.innerHTML = '<div class="empty">Searching RPS. Details will appear here so you can inspect the selected segment.</div>';
-      suggestions.innerHTML = '<div class="empty">Waiting for alternate RPS audience options.</div>';
 
       try {
-        const data = await postJson("/api/demo", { intent: value });
+        const data = await postJson("/api/copy", { intent: value });
         applyCopy(data.copy);
+        reveal(copyPanel);
+        reveal(variantPanel);
+        reveal(previewPanel);
+        demoLayout.classList.remove("guided-start");
+        workflowStatus.textContent = "Copy generated. Review it, then decide whether to add variants.";
         copyStatus.textContent = "Done: copy generated. Title and body are editable, and the phone preview updates as you type.";
         setBadge(copyBadge, "Generated", "ok");
         setVariantControlsEnabled(true);
-        clearVariants("Ready: choose Yes to create variants from the current editable copy.");
+        clearVariants("Ready: choose Yes to create variants from your current editable copy.");
         setBadge(variantsBadge, "Ready");
-        setSelectedAudience(data.selected_audience);
-        renderSuggestions(data.suggested_audiences);
+        conceal(audienceStep);
+        resetAudienceSearch();
+        resetDeeplinkSearch();
+        setGuide("Step 2 of 4", "Select your copy", "Edit the title and body, then add variants or continue to audience.");
+        focusStep(copyPanel);
       } catch (error) {
         const payload = error.payload || { error: error.message };
-        if (payload.step === "copy") {
-          setBadge(copyBadge, "Error", "error");
-          setBadge(rpsBadge, "Waiting");
-          copyStatus.textContent = "Copy generation failed before RPS search could run.";
-          renderError(segmentDetails, payload);
-        } else {
-          if (payload.copy) {
-            applyCopy(payload.copy);
-            setBadge(copyBadge, "Generated", "ok");
-            setVariantControlsEnabled(true);
-            copyStatus.textContent = "Copy generated, but the audience step needs attention.";
-          }
-          setBadge(rpsBadge, "Error", "error");
-          renderError(segmentDetails, payload);
-        }
+        workflowStatus.textContent = payload.error || "Copy generation failed.";
+        copyStatus.textContent = payload.error || "Copy generation failed.";
+        setBadge(copyBadge, "Error", "error");
       } finally {
         setWorkflowLoading(false);
       }
@@ -1579,7 +1868,7 @@ INDEX_HTML = """
     regenButton.addEventListener("click", async () => {
       const value = intent.value.trim();
       if (!value) {
-        copyStatus.textContent = "Enter an intent first.";
+        copyStatus.textContent = "Enter your intent first.";
         return;
       }
 
@@ -1589,10 +1878,19 @@ INDEX_HTML = """
       try {
         const data = await postJson("/api/copy", { intent: value });
         applyCopy(data.copy);
+        reveal(copyPanel);
+        reveal(variantPanel);
+        reveal(previewPanel);
+        demoLayout.classList.remove("guided-start");
         copyStatus.textContent = "Done: copy regenerated. You can still edit the title and body directly.";
         setBadge(copyBadge, "Generated", "ok");
         clearVariants("Copy changed. Choose Yes again when you want variants based on the new copy.");
         setBadge(variantsBadge, "Ready");
+        conceal(audienceStep);
+        resetAudienceSearch();
+        resetDeeplinkSearch();
+        setGuide("Step 2 of 4", "Review your revised copy", "Because your copy changed, continue through audience and deeplink again when you are ready.");
+        focusStep(copyPanel);
       } catch (error) {
         const payload = error.payload || { error: error.message };
         copyStatus.textContent = payload.error || "Copy regeneration failed.";
@@ -1602,8 +1900,35 @@ INDEX_HTML = """
       }
     });
 
+    findRpsButton.addEventListener("click", async () => {
+      const value = intent.value.trim();
+      if (!value) {
+        segmentStatus.textContent = "Enter your intent first so RPS has audience context.";
+        setBadge(rpsBadge, "Waiting", "warn");
+        return;
+      }
+
+      findRpsButton.disabled = true;
+      segmentStatus.textContent = "Working: RPS is searching Dynamic Segments that match your intended audience.";
+      segmentDetails.innerHTML = '<div class="empty">Searching RPS. Details will appear here so you can inspect your selected segment.</div>';
+      setBadge(rpsBadge, "Searching", "warn");
+      try {
+        const data = await postJson("/api/audience", { intent: value });
+        setSelectedAudience(data.selected_audience);
+      } catch (error) {
+        const payload = error.payload || { error: error.message };
+        segmentStatus.textContent = payload.error || "RPS search failed.";
+        setBadge(rpsBadge, "Error", "error");
+        renderError(segmentDetails, payload);
+      } finally {
+        findRpsButton.disabled = false;
+      }
+    });
+
     segmentId.addEventListener("input", () => {
       if (suppressSegmentLookup) return;
+      selectedAudienceOption = null;
+      resetCreateCampaign(false);
       clearTimeout(segmentLookupTimer);
       segmentLookupTimer = setTimeout(async () => {
         const value = segmentId.value.trim();
@@ -1626,11 +1951,66 @@ INDEX_HTML = """
       }, 450);
     });
 
-    suggestions.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-index]");
+    deeplinkCandidates.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-deeplink-index]");
       if (!button) return;
-      const option = activeSuggestions[Number(button.dataset.index)];
-      setSelectedAudience(option);
+      const option = activeDeeplinkOptions[Number(button.dataset.deeplinkIndex)];
+      setSelectedDeeplink(option);
+    });
+
+    manualDeeplinkButton.addEventListener("click", () => {
+      deeplinkStatus.textContent = "Paste the deeplink you already have. The field is editable and will be used as entered.";
+      setBadge(deeplinkBadge, "Manual");
+      setGuide("Step 3 of 4", "Paste your deeplink", "Paste your destination URL. Once the field has a value, the create step will unlock.");
+      deeplinkUrl.focus();
+    });
+
+    deeplinkUrl.addEventListener("input", () => {
+      if (!deeplinkUrl.value.trim()) {
+        resetPackage();
+        resetCreateCampaign();
+        return;
+      }
+      reveal(createCampaignPanel);
+      resetCreateCampaign(false);
+      reveal(packagePanel);
+      resetPackage(false);
+      setBadge(deeplinkBadge, "Manual");
+      deeplinkStatus.textContent = "Manual deeplink entered. You can still edit it before handoff.";
+      setGuide("Step 4 of 4", "Create the campaign", "PATCH the QA campaign with your reviewed copy, deeplink, and selected RPS segment.");
+    });
+
+    searchDeeplinkButton.addEventListener("click", async () => {
+      const value = intent.value.trim();
+      if (!value) {
+        deeplinkStatus.textContent = "Enter your intent first so the catalog search has context.";
+        setBadge(deeplinkBadge, "Waiting", "warn");
+        return;
+      }
+
+      searchDeeplinkButton.disabled = true;
+      manualDeeplinkButton.disabled = true;
+      deeplinkStatus.textContent = "Working: searching the Oslo deeplink catalog using your current intent and editable copy.";
+      deeplinkCandidates.innerHTML = '<div class="empty">Searching the Oslo catalog. The top two landing pages will appear here.</div>';
+      setBadge(deeplinkBadge, "Searching", "warn");
+      try {
+        const data = await postJson("/api/deeplinks", {
+          intent: value,
+          title: copyTitle.value.trim(),
+          body: copyBody.value.trim()
+        });
+        const deeplinkOptions = deeplinkOptionList(data);
+        renderDeeplinkOptions(deeplinkOptions, data.selected_deeplink?.recommendation?.path || "");
+        setSelectedDeeplink(data.selected_deeplink);
+      } catch (error) {
+        const payload = error.payload || { error: error.message };
+        deeplinkStatus.textContent = payload.error || "Deeplink catalog search failed.";
+        setBadge(deeplinkBadge, "Error", "error");
+        renderError(deeplinkCandidates, payload);
+      } finally {
+        searchDeeplinkButton.disabled = false;
+        manualDeeplinkButton.disabled = false;
+      }
     });
 
     variantsYes.addEventListener("click", async () => {
@@ -1655,6 +2035,7 @@ INDEX_HTML = """
         renderVariantRow(data.variants || []);
         variantsStatus.textContent = "Done: control copy plus Variant A and Variant B are ready for review.";
         setBadge(variantsBadge, "Generated", "ok");
+        showAudienceStep();
       } catch (error) {
         const payload = error.payload || { error: error.message };
         variantsStatus.textContent = payload.error || "Variant generation failed.";
@@ -1666,10 +2047,130 @@ INDEX_HTML = """
 
     variantsNo.addEventListener("click", () => {
       clearVariants();
+      showAudienceStep();
     });
 
-    copyTitle.addEventListener("input", updatePreview);
-    copyBody.addEventListener("input", updatePreview);
+    continueAudienceButton.addEventListener("click", () => {
+      showAudienceStep();
+    });
+
+    buildPackageButton.addEventListener("click", async () => {
+      const copy = currentCopy();
+      const deeplink = deeplinkUrl.value.trim();
+      if (!copy.title || !copy.body || !deeplink) {
+        packageStatus.textContent = "Enter title, body, and deeplink before building the JSON package.";
+        setBadge(packageBadge, "Waiting", "warn");
+        return;
+      }
+
+      buildPackageButton.disabled = true;
+      packageStatus.textContent = "Working: building the demo upload package from the agentic campaign template.";
+      setBadge(packageBadge, "Building", "warn");
+      try {
+        const data = await postJson("/api/package", {
+          intent: intent.value.trim(),
+          title: copy.title,
+          body: copy.body,
+          deeplink: deeplink
+        });
+        currentPackage = data;
+        packageJson.value = JSON.stringify(data.package, null, 2);
+        packageStatus.textContent = "Done: title, body, and deeplink were inserted; the rest of the campaign stayed hard-coded for the demo send.";
+        setBadge(packageBadge, "Ready", "ok");
+        copyPackageButton.disabled = false;
+        downloadPackageButton.disabled = false;
+      } catch (error) {
+        const payload = error.payload || { error: error.message };
+        packageStatus.textContent = payload.error || "Package generation failed.";
+        setBadge(packageBadge, "Error", "error");
+      } finally {
+        buildPackageButton.disabled = false;
+      }
+    });
+
+    createCampaignButton.addEventListener("click", async () => {
+      const copy = currentCopy();
+      const segment = selectedSegmentPayload();
+      const deeplink = deeplinkUrl.value.trim();
+      if (!copy.title || !copy.body) {
+        createCampaignStatus.textContent = "Enter title and body copy before creating the campaign.";
+        setBadge(createCampaignBadge, "Waiting", "warn");
+        return;
+      }
+      if (!deeplink) {
+        createCampaignStatus.textContent = "Enter or select a deeplink before creating the campaign.";
+        setBadge(createCampaignBadge, "Waiting", "warn");
+        return;
+      }
+      if (!segment.segment_id || !segment.segment_code) {
+        createCampaignStatus.textContent = "Select an RPS segment with both segment ID and segment code before creating the campaign.";
+        setBadge(createCampaignBadge, "Waiting", "warn");
+        return;
+      }
+
+      createCampaignButton.disabled = true;
+      createCampaignStatus.textContent = "Working: PATCHing campaign 9855711573 in QA.";
+      setBadge(createCampaignBadge, "PATCHing", "warn");
+      createCampaignResult.hidden = true;
+      createCampaignResult.value = "";
+      try {
+        const data = await postJson("/api/create-campaign", {
+          title: copy.title,
+          body: copy.body,
+          deeplink: deeplink,
+          segment_id: segment.segment_id,
+          segment_code: segment.segment_code
+        });
+        createCampaignStatus.textContent = `Done: campaign ${data.campaign_id || "9855711573"} was updated in QA.`;
+        setBadge(createCampaignBadge, "Created", "ok");
+        createCampaignResult.value = JSON.stringify(data.response || data, null, 2);
+        createCampaignResult.hidden = false;
+      } catch (error) {
+        const payload = error.payload || { error: error.message };
+        createCampaignStatus.textContent = payload.error || "Campaign PATCH failed.";
+        setBadge(createCampaignBadge, "Error", "error");
+        createCampaignResult.value = JSON.stringify(payload, null, 2);
+        createCampaignResult.hidden = false;
+      } finally {
+        createCampaignButton.disabled = false;
+      }
+    });
+
+    copyPackageButton.addEventListener("click", async () => {
+      if (!packageJson.value.trim()) return;
+      try {
+        await navigator.clipboard.writeText(packageJson.value);
+        packageStatus.textContent = "Copied JSON to clipboard.";
+      } catch {
+        packageStatus.textContent = "Copy failed. Select the JSON text and copy it manually.";
+      }
+    });
+
+    downloadPackageButton.addEventListener("click", () => {
+      if (!packageJson.value.trim()) return;
+      const blob = new Blob([packageJson.value], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = currentPackage?.download_filename || "oslo-demo-campaign.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    function handleCopyInput() {
+      updatePreview();
+      if (!packagePanel.hidden) {
+        resetPackage(false);
+      }
+      if (!createCampaignPanel.hidden) {
+        resetCreateCampaign(false);
+      }
+    }
+
+    copyTitle.addEventListener("input", handleCopyInput);
+    copyBody.addEventListener("input", handleCopyInput);
 
     updatePreview();
     loadHealth();
@@ -1717,11 +2218,23 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
         if path == "/api/copy":
             self._handle_copy(payload)
             return
+        if path == "/api/audience":
+            self._handle_audience(payload)
+            return
         if path == "/api/segment":
             self._handle_segment(payload)
             return
+        if path == "/api/deeplinks":
+            self._handle_deeplinks(payload)
+            return
         if path == "/api/variants":
             self._handle_variants(payload)
+            return
+        if path == "/api/package":
+            self._handle_package(payload)
+            return
+        if path == "/api/create-campaign":
+            self._handle_create_campaign(payload)
             return
 
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found."})
@@ -1730,7 +2243,7 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
         intent = str(payload.get("intent", "")).strip()
         if not intent:
             self._send_json(
-                HTTPStatus.BAD_REQUEST, {"error": "Enter an intent before generating copy."}
+                HTTPStatus.BAD_REQUEST, {"error": "Enter your intent before generating copy."}
             )
             return
 
@@ -1758,11 +2271,35 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
 
         selected = audience_options[0] if audience_options else None
         suggestions = audience_options[1:]
+        selected_payload = audience_option_payload(selected)
+        suggestions_payload = [audience_option_payload(option) for option in suggestions]
+        try:
+            deeplink_options = search_deeplink_options(intent, copy=copy, limit=2)
+        except DeeplinkCatalogError as exc:
+            error_payload = {
+                "step": "deeplink",
+                "copy": copy_payload,
+                "selected_audience": selected_payload,
+                "suggested_audiences": suggestions_payload,
+                "error": str(exc),
+                "hint": "Confirm VPN/network access to the Oslo hub catalog, then retry the deeplink search.",
+            }
+            record_last_workflow(HTTPStatus.BAD_GATEWAY, intent, error_payload)
+            self._send_json(HTTPStatus.BAD_GATEWAY, error_payload)
+            return
+
+        selected_deeplink = deeplink_options[0] if deeplink_options else None
+        suggested_deeplinks = deeplink_options[1:]
         response_payload = {
             "intent": intent,
             "copy": copy_payload,
-            "selected_audience": audience_option_payload(selected),
-            "suggested_audiences": [audience_option_payload(option) for option in suggestions],
+            "selected_audience": selected_payload,
+            "suggested_audiences": suggestions_payload,
+            "selected_deeplink": deeplink_option_payload(selected_deeplink),
+            "suggested_deeplinks": [
+                deeplink_option_payload(option) for option in suggested_deeplinks
+            ],
+            "deeplink_options": [deeplink_option_payload(option) for option in deeplink_options],
             "audience": asdict(selected.recommendation) if selected else None,
             "model": COSMOS_LLM_MODEL,
         }
@@ -1773,7 +2310,7 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
         intent = str(payload.get("intent", "")).strip()
         if not intent:
             self._send_json(
-                HTTPStatus.BAD_REQUEST, {"error": "Enter an intent before generating copy."}
+                HTTPStatus.BAD_REQUEST, {"error": "Enter your intent before generating copy."}
             )
             return
 
@@ -1788,6 +2325,40 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
             {
                 "intent": intent,
                 "copy": copy_response_payload(copy),
+                "model": COSMOS_LLM_MODEL,
+            },
+        )
+
+    def _handle_audience(self, payload: dict[str, Any]) -> None:
+        intent = str(payload.get("intent", "")).strip()
+        if not intent:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Enter your intent before searching for an RPS segment."},
+            )
+            return
+
+        try:
+            audience_options = search_audience_options(intent, limit=3)
+        except RpsApiError as exc:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {
+                    "step": "rps",
+                    "error": str(exc),
+                    "hint": "Confirm VPN/network access to the QA RPS host, then retry.",
+                },
+            )
+            return
+
+        selected = audience_options[0] if audience_options else None
+        suggestions = audience_options[1:]
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "intent": intent,
+                "selected_audience": audience_option_payload(selected),
+                "suggested_audiences": [audience_option_payload(option) for option in suggestions],
                 "model": COSMOS_LLM_MODEL,
             },
         )
@@ -1828,12 +2399,49 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _handle_deeplinks(self, payload: dict[str, Any]) -> None:
+        intent = str(payload.get("intent", "")).strip()
+        title = str(payload.get("title", "")).strip()
+        body = str(payload.get("body", "")).strip()
+        if not intent:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Enter your intent first."})
+            return
+
+        copy = CopyDraft(title=title, body=body) if title and body else None
+        try:
+            deeplink_options = search_deeplink_options(intent, copy=copy, limit=2)
+        except DeeplinkCatalogError as exc:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {
+                    "step": "deeplink",
+                    "error": str(exc),
+                    "hint": "Confirm VPN/network access to the Oslo hub catalog, then retry.",
+                },
+            )
+            return
+
+        selected = deeplink_options[0] if deeplink_options else None
+        suggestions = deeplink_options[1:]
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "intent": intent,
+                "selected_deeplink": deeplink_option_payload(selected),
+                "suggested_deeplinks": [deeplink_option_payload(option) for option in suggestions],
+                "deeplink_options": [
+                    deeplink_option_payload(option) for option in deeplink_options
+                ],
+                "model": COSMOS_LLM_MODEL,
+            },
+        )
+
     def _handle_variants(self, payload: dict[str, Any]) -> None:
         intent = str(payload.get("intent", "")).strip()
         title = str(payload.get("title", "")).strip()
         body = str(payload.get("body", "")).strip()
         if not intent:
-            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Enter an intent first."})
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Enter your intent first."})
             return
         if not title or not body:
             self._send_json(
@@ -1857,6 +2465,125 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
             {
                 "variants": [copy_response_payload(variant) for variant in variants],
                 "model": COSMOS_LLM_MODEL,
+            },
+        )
+
+    def _handle_package(self, payload: dict[str, Any]) -> None:
+        title = str(payload.get("title", "")).strip()
+        body = str(payload.get("body", "")).strip()
+        deeplink = str(payload.get("deeplink", "")).strip()
+        if not title or not body:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Enter title and body copy before building the upload JSON."},
+            )
+            return
+        if not deeplink:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Enter or select a deeplink before building the upload JSON."},
+            )
+            return
+
+        try:
+            package = build_demo_campaign_package(title=title, body=body, deeplink=deeplink)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "error": f"Could not build the demo campaign package: {exc}",
+                    "hint": "Confirm resources/agentic_comms_test.json is present and still has PUSH content.",
+                },
+            )
+            return
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "package": package,
+                "download_filename": "oslo-demo-campaign-upload.json",
+                "updated_fields": {
+                    "title": title,
+                    "body": body,
+                    "deep_link": deeplink,
+                },
+                "hard_coded_from": str(REFERENCE_CAMPAIGN_PATH.relative_to(PROJECT_ROOT)),
+            },
+        )
+
+    def _handle_create_campaign(self, payload: dict[str, Any]) -> None:
+        title = str(payload.get("title", "")).strip()
+        body = str(payload.get("body", "")).strip()
+        deeplink = str(payload.get("deeplink", "")).strip()
+        segment_id = str(payload.get("segment_id", "")).strip()
+        segment_code = str(payload.get("segment_code", "")).strip()
+        if not title or not body:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Enter title and body copy before creating the campaign."},
+            )
+            return
+        if not deeplink:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Enter or select a deeplink before creating the campaign."},
+            )
+            return
+        if not segment_id or not segment_code:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": "Select an RPS segment with both segment ID and segment code before creating the campaign."
+                },
+            )
+            return
+
+        try:
+            campaign_id, patch_payload = build_demo_campaign_patch_payload(
+                title=title,
+                body=body,
+                deeplink=deeplink,
+                segment_id=segment_id,
+                segment_code=segment_code,
+            )
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "error": f"Could not build the campaign PATCH payload: {exc}",
+                    "hint": "Confirm resources/agentic_comms_test.json is present and still has PUSH content plus a Dynamic Segment target.",
+                },
+            )
+            return
+
+        try:
+            response_payload = patch_demo_campaign(campaign_id, patch_payload)
+        except RuntimeError as exc:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {
+                    "error": str(exc),
+                    "hint": "Confirm VPN/network access to the QA campaign-management host, then retry.",
+                    "campaign_id": campaign_id,
+                    "patch_payload": patch_payload,
+                },
+            )
+            return
+
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "campaign_id": campaign_id,
+                "source_template": str(AGENTIC_CAMPAIGN_PATH.relative_to(PROJECT_ROOT)),
+                "updated_fields": {
+                    "title": title,
+                    "body": body,
+                    "deep_link": deeplink,
+                    "segment_id": segment_id,
+                    "segment_code": segment_code,
+                },
+                "patch_payload": patch_payload,
+                "response": response_payload,
             },
         )
 
@@ -1908,6 +2635,8 @@ def health_payload() -> dict[str, Any]:
         "max_tokens": COSMOS_LLM_MAX_TOKENS,
         "cosmos_base_url": COSMOS_LLM_BASE_URL,
         "rps_base_url": DYNSEG_BASE_URL,
+        "deeplink_catalog_url": DEEPLINK_CATALOG_URL,
+        "deeplink_catalog_data_url": DEEPLINK_CATALOG_DATA_URL,
     }
 
 
@@ -1922,6 +2651,174 @@ def audience_option_payload(option: AudienceOption | None) -> dict[str, Any] | N
         "recommendation": asdict(option.recommendation),
         "details": option.details,
     }
+
+
+def deeplink_option_payload(option: DeeplinkOption | None) -> dict[str, Any] | None:
+    if option is None:
+        return None
+    return {
+        "recommendation": asdict(option.recommendation),
+        "details": option.details,
+    }
+
+
+def build_demo_campaign_package(title: str, body: str, deeplink: str) -> dict[str, Any]:
+    package = json.loads(REFERENCE_CAMPAIGN_PATH.read_text())
+    push_channel = next(
+        (
+            channel
+            for channel in package.get("channel_details", [])
+            if channel.get("channel_name") == "PUSH" or channel.get("channel_id") == 1002
+        ),
+        None,
+    )
+    if not isinstance(push_channel, dict):
+        raise ValueError("reference campaign does not include a PUSH channel")
+
+    content_items = push_channel.get("content")
+    if not isinstance(content_items, list) or not content_items:
+        raise ValueError("reference PUSH channel does not include content")
+
+    content = content_items[0]
+    content_payload = content.setdefault("content_payload", {})
+    locale = str(content.get("default_locale") or "en-US")
+    localized = content_payload.setdefault("localizable_content", {}).setdefault(locale, {})
+    localized["title"] = title
+    localized["body"] = body
+    content_payload.setdefault("non_localizable_content", {})["deep_link"] = deeplink
+    return package
+
+
+def build_demo_campaign_patch_payload(
+    title: str,
+    body: str,
+    deeplink: str,
+    segment_id: str,
+    segment_code: str,
+) -> tuple[str, dict[str, Any]]:
+    campaign = json.loads(AGENTIC_CAMPAIGN_PATH.read_text())
+    campaign_id = str(campaign.get("campaign_id") or "").strip()
+    if not campaign_id:
+        raise ValueError("agentic campaign template is missing campaign_id")
+
+    delivery_type = str(campaign.get("delivery_type") or "").strip()
+    if not delivery_type:
+        raise ValueError("agentic campaign template is missing delivery_type")
+
+    delivery_config = campaign.get("delivery_config")
+    if not isinstance(delivery_config, dict):
+        raise ValueError("agentic campaign template is missing delivery_config")
+
+    dynamic_segment = (
+        delivery_config.get("target_config", {})
+        .get("dynamic_segment", {})
+    )
+    groups = dynamic_segment.get("groups")
+    if not isinstance(groups, list) or not groups:
+        raise ValueError("delivery_config does not include Dynamic Segment groups")
+
+    include_segments = groups[0].get("include_segments")
+    if not isinstance(include_segments, list) or not include_segments:
+        raise ValueError("delivery_config does not include include_segments")
+
+    include_segments[0]["segment_id"] = segment_id
+    include_segments[0]["segment_code"] = segment_code
+
+    push_channel = next(
+        (
+            channel
+            for channel in campaign.get("channel_details", [])
+            if channel.get("channel_name") == "PUSH" or channel.get("channel_id") == 1002
+        ),
+        None,
+    )
+    if not isinstance(push_channel, dict):
+        raise ValueError("agentic campaign template does not include a PUSH channel")
+
+    content_items = push_channel.get("content")
+    if not isinstance(content_items, list) or not content_items:
+        raise ValueError("agentic PUSH channel does not include content")
+
+    content = content_items[0]
+    if not isinstance(content, dict):
+        raise ValueError("agentic PUSH content is invalid")
+
+    content_payload = content.get("content_payload")
+    if not isinstance(content_payload, dict):
+        raise ValueError("agentic PUSH content is missing content_payload")
+
+    localized = content_payload.get("localizable_content", {}).get("en-US")
+    if not isinstance(localized, dict):
+        raise ValueError("agentic PUSH content is missing localizable_content.en-US")
+
+    localized["title"] = title
+    localized["body"] = body
+    non_localized = content_payload.get("non_localizable_content")
+    if not isinstance(non_localized, dict):
+        raise ValueError("agentic PUSH content is missing non_localizable_content")
+    non_localized["deep_link"] = deeplink
+
+    patch_content = {
+        key: content[key]
+        for key in (
+            "content_id",
+            "content_name",
+            "content_variant_code",
+            "default_locale",
+            "content_legal_review_exception",
+            "content_legal_review_exception_reason",
+        )
+        if key in content
+    }
+    patch_content["content_payload"] = content_payload
+
+    patch_channel = {
+        key: push_channel[key]
+        for key in ("channel_id", "channel_name", "channel_rules")
+        if key in push_channel
+    }
+    patch_channel["content"] = [patch_content]
+
+    return campaign_id, {
+        "delivery_type": delivery_type,
+        "delivery_config": delivery_config,
+        "channel_details": [patch_channel],
+    }
+
+
+def patch_demo_campaign(campaign_id: str, patch_payload: dict[str, Any]) -> dict[str, Any]:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    url = f"{CAMPAIGN_MANAGEMENT_BASE_URL}/{campaign_id}"
+    try:
+        response = requests.patch(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "USER_DETAILS": CAMPAIGN_MANAGEMENT_USER_DETAILS,
+            },
+            json=patch_payload,
+            timeout=CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS,
+            verify=False,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"PATCH {url} failed: {exc}") from exc
+
+    detail = response.text.strip()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        message = f"PATCH {url} failed: {exc}"
+        if detail:
+            message = f"{message} - {detail[:500]}"
+        raise RuntimeError(message) from exc
+
+    try:
+        parsed = response.json()
+    except ValueError:
+        return {"raw_response": detail}
+    if not isinstance(parsed, dict):
+        return {"response": parsed}
+    return parsed
 
 
 def last_workflow_payload() -> dict[str, Any]:
@@ -1954,6 +2851,10 @@ def workflow_log_line(workflow: dict[str, Any]) -> str:
     response = workflow.get("response") if isinstance(workflow.get("response"), dict) else {}
     selected = response.get("selected_audience") if isinstance(response, dict) else None
     selected_rec = selected.get("recommendation") if isinstance(selected, dict) else None
+    selected_deeplink = response.get("selected_deeplink") if isinstance(response, dict) else None
+    selected_deeplink_rec = (
+        selected_deeplink.get("recommendation") if isinstance(selected_deeplink, dict) else None
+    )
     suggestions = response.get("suggested_audiences") if isinstance(response, dict) else []
     suggestion_codes = []
     if isinstance(suggestions, list):
@@ -1964,9 +2865,14 @@ def workflow_log_line(workflow: dict[str, Any]) -> str:
 
     selected_code = ""
     selected_id = ""
+    selected_deeplink_path = ""
     if isinstance(selected_rec, dict):
         selected_code = str(selected_rec.get("code") or "")
         selected_id = str(selected_rec.get("segment_id") or "")
+    if isinstance(selected_deeplink_rec, dict):
+        selected_deeplink_path = str(
+            selected_deeplink_rec.get("path") or selected_deeplink_rec.get("url") or ""
+        )
 
     if response.get("error"):
         outcome = f"error={response.get('error')}"
@@ -1980,6 +2886,7 @@ def workflow_log_line(workflow: dict[str, Any]) -> str:
         f"status={workflow.get('status')} "
         f"intent={workflow.get('intent')!r} "
         f"{outcome} "
+        f"deeplink={selected_deeplink_path or 'none'} "
         f"suggestions={', '.join(filter(None, suggestion_codes)) or 'none'}"
     )
 

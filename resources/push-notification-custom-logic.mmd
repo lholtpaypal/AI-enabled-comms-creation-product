@@ -1,0 +1,65 @@
+---
+title: Push Notification Campaign — Custom-Logic Orchestration (batch push, one-off)
+---
+flowchart TD
+    U0(["User declares campaign intent"]):::user
+
+    U0 --> ORCH{{"Custom-logic coordinator<br/>code-level orchestration"}}:::coord
+
+    %% ---- Parallel model generation ----
+    ORCH --> FK@{ shape: fork }
+    FK --> A1["content-writer-agent<br/>generate push copy"]:::agent
+    FK --> A3["deeplink search agent<br/>resolve in-app destination"]:::agent
+    FK --> A4["RPS search agent<br/>build candidate segment"]:::agent
+
+    A1 --> A2["content-writer-agent<br/>2 A/B variants + 3 mockups"]:::agent
+    A4 --> A5["RPS search agent<br/>2 ranked alt segments"]:::agent
+
+    A2 --> JN@{ shape: join }
+    A3 --> JN
+    A5 --> JN
+
+    %% ---- Human assembly (human-in-the-loop) ----
+    JN --> H1["select final copy"]:::human
+    H1 --> H2["select / create image asset"]:::human
+    H2 --> H3["set up audience in RPS<br/>+ suppression rules"]:::human
+    H3 --> H4["set schedule & send window"]:::human
+    H4 --> H5["configure push in CommsHub / PStudio<br/>copy, image, audience, oslo_deeplink"]:::human
+
+    H5 --> DLOC{"Multi-locale?"}:::decision
+    DLOC -- Yes --> H6["configure localized Title/Body<br/>per locale"]:::human
+    DLOC -- No --> A6
+    H6 --> A6
+
+    %% ---- Legal sub-flow with resubmission loop ----
+    A6["legal pre-screen agent<br/>RAG triage + severity flags"]:::agent
+    A6 --> H7["pull population count from RPS"]:::human
+    H7 --> H8["prepare legal asset PDF<br/>copy + send logic + suppression"]:::human
+    H8 --> H9["submit legal ticket (Quickbase)"]:::human
+    H9 --> DLEG{"Legal verdict?"}:::decision
+    DLEG -- "Needs review / Blocked" --> H8R["revise asset<br/>Revised Asset resubmission"]:::human
+    H8R --> H8
+    DLEG -- Pass --> HITL1[["Final legal review & sign-off"]]:::gate
+
+    %% ---- Test & approvals ----
+    HITL1 --> H10["test in Stage<br/>api.stage2d0014"]:::human
+    H10 --> H11["validate deeplink navigation<br/>iOS + Android"]:::human
+    H11 --> EXT1[["Touchpoint owner approval"]]:::external
+    EXT1 --> EXT2[["ECM-ops approval & publish to Prod"]]:::external
+
+    %% ---- Smoke test + threshold fork ----
+    EXT2 --> H12["smoke test to 5k users"]:::human
+    H12 --> DTH{"Clears thresholds?<br/>CTR &gt; 5% , opt-out &lt; 0.5%"}:::decision
+    DTH -- No --> STOP(["Hold / revise — do not ramp"]):::stop
+    DTH -- Yes --> H13["ramp to full audience"]:::human
+    H13 --> H14(["Launch & monitor<br/>go/pushdashboard"]):::user
+
+    %% ---- Styling ----
+    classDef user fill:#dbeafe,stroke:#1e40af,color:#1e3a8a;
+    classDef coord fill:#fef9c3,stroke:#a16207,color:#713f12,stroke-width:2px;
+    classDef agent fill:#dcfce7,stroke:#15803d,color:#14532d;
+    classDef human fill:#f1f5f9,stroke:#475569,color:#1e293b;
+    classDef gate fill:#fae8ff,stroke:#a21caf,color:#701a75,stroke-width:2px;
+    classDef external fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px;
+    classDef decision fill:#fde68a,stroke:#b45309,color:#78350f;
+    classDef stop fill:#fecaca,stroke:#991b1b,color:#7f1d1d;

@@ -1,45 +1,67 @@
-# Push Notification Enrollment Workflow
+# Push Notification Demo Workflow
 
-**Layout:** Vertical, worked through step by step.
+**Layout:** Vertical, revealed step by step.
 
-## 1. Declared Intent
+## 1. Campaign Context
 
-The user starts with an intent box, e.g.:
+The first screen shows only the campaign context question. The user enters a plain-English request, for example:
 
-> "Hey! I need to create a push notification to get eligible users to enroll in the PayPal Debit Card"
+> "I want to encourage eligible US customers to use PayPal's Buy Now, Pay Later for the first time."
 
-This declared intent kicks off the entire workflow. The model is called and returns the copy for the push notification.
+The context is shared with each agent, but no downstream agent runs automatically.
 
-## 2. Editable Copy
+## 2. Copy And Variants
 
-- The returned copy is displayed in a long, editable text box.
-- Below the text box is a **"Regenerate copy text"** button.
-  - On click, it reuses the declared intent, calls the model again, and returns a different set of copy in the box.
-  - This behavior repeats each time the user presses **"Regenerate copy text"**.
+The first action is **Generate copy**, which calls the content writer and returns push notification `title` and `body` only.
 
-## 3. Audience (RPS Search Agent)
+Content writer requirements:
 
-Below the copy section, the RPS Search agent forms the API call and returns an audience, presented as two boxes:
+- Run a PayPal.com value-prop web-search pass before drafting copy.
+- Use the latest usable PayPal.com product-page context as the source of truth.
+- Do not treat PayPal products generically when a specific product value prop is available.
+- For PayPal Debit Card, use the 5% cash back value prop when relevant.
+- For Pay Later / BNPL, use eligible-purchase payment splitting at checkout when relevant.
 
-- **RPS Segment ID box** — editable. Users can paste in their own Dynamic Segment ID.
-- **RPS Details box** — shows all metrics from the RPS segment.
+The generated `title` and `body` are editable. The lock-screen preview updates as the user edits either field.
 
-If a user pastes in another segment ID, the details automatically update accordingly.
+Variants belong in this same copy step:
 
-## 4. Suggested Audience Options
+- The user can click **Yes** to create two A/B copy variants.
+- Variants are generated from the current editable title/body plus the original context.
+- Variants only change `title` and `body`.
+- The row shows the control copy plus Variant A and Variant B as standalone push notifications.
 
-- The user is also presented with the next **2 suggested dynamic audience options**, in case they'd prefer one of those instead.
-- If a suggestion is clicked:
-  - The **RPS Segment ID box** updates with the chosen segment's ID.
-  - The **RPS Details box** updates accordingly.
+The user can skip variants and continue to audience.
 
-## 5. Generate Content Variants for A/B Experimentation
+## 3. Audience And Deeplink
 
-- The user is presented with a button that says, 'Create content variations for A/B testing?' with a Yes or No button
-- If the user clicks 'yes'; 2 additional variants are generated and presented.
-    - The only thing that should be additionally generated is the Title and Body copy for the notification. 
-- At this point in the flow, the user should see all three push notification mock-ups, the push notification only, not presented in the iPhone UI – just at the bottom, in 1 row.
+The user clicks **Find RPS segment** only when ready. The RPS Search agent returns one selected Dynamic Segment for the demo UI.
 
----
+Visible audience output:
 
-**Make these changes.**
+- Editable RPS Segment ID.
+- RPS details from the selected segment.
+
+Alternative audience cards are intentionally hidden for the demo.
+
+The user then chooses a deeplink:
+
+- Paste an existing deeplink, or
+- Click **Find deeplink** to search the Oslo deeplink catalog.
+
+The deeplink search returns the top two registered destinations, and the first one populates the editable deeplink field.
+
+## 4. Upload JSON
+
+The final action is **Build upload JSON**.
+
+For the demo, this is intentionally fakeable:
+
+- Read `resources/reference_campaign.json`.
+- Keep the campaign, target audience, QA test-account segment, channel rules, owners, and other settings hard-coded.
+- Replace only:
+  - `content_payload.localizable_content.en-US.title`
+  - `content_payload.localizable_content.en-US.body`
+  - `content_payload.non_localizable_content.deep_link`
+
+The resulting JSON can be copied or downloaded for PStudio upload.

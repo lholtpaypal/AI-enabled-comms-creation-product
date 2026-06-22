@@ -75,10 +75,23 @@ COSMOS_LLM_MODEL=gpt-5-mini
 
 The real `.env` file is ignored so local credentials do not get committed.
 
+Copy generation also runs a live PayPal.com value-prop search before calling Cosmos. By default it
+uses DuckDuckGo's HTML endpoint to find public `paypal.com` product pages, fetches the top pages,
+and passes short source highlights into the content-writer prompt. If that search path is
+unavailable, the demo falls back to the static product hints in code. Set
+`PAYPAL_VALUE_PROP_SEARCH_ENABLED=false` in `.env` to disable live search for local testing.
+
 RPS access also requires VPN/network access to the QA host:
 
 ```text
 https://msmaster.qa.paypal.com:20068/v1/dynsegmentationserv
+```
+
+Deeplink search reads the Oslo catalog page and generated `data.js` directly because the catalog
+does not expose an API:
+
+```text
+http://10.183.174.28:3333/oslo-hub/tools/deeplinks-catalog/index.html
 ```
 
 ## Run The Demo
@@ -125,26 +138,29 @@ A second terminal is optional. It is useful only if you want to run test command
 
 1. Open `http://127.0.0.1:8000`.
 2. Confirm the top-right status says local config is ready.
-3. Enter the PM intent.
-4. Click **Generate workflow**.
-5. The page calls the local server at `POST /api/demo`.
-6. The local server calls Cosmos to generate copy.
-7. The local server uses Cosmos to plan targeted RPS Dynamic Segment searches, then calls RPS.
-8. The page displays the generated copy in two editable fields: Title and Body.
-9. The phone preview on the right updates live from the Title and Body fields.
-10. The page displays the selected RPS Segment ID and all returned RPS segment details.
-11. The page displays the next two suggested Dynamic Segments beside the RPS section.
-12. The page asks whether to create content variations for A/B testing.
-13. If you click **Yes**, Cosmos generates two additional Title/Body variants.
-14. The bottom of the page shows three standalone push notification mockups in one row: the current control copy plus the two generated variants.
+3. Enter the PM campaign context. The first screen intentionally shows only this question.
+4. Click **Generate copy**.
+5. The page calls the local server at `POST /api/copy`.
+6. The local server runs the PayPal.com value-prop web-search pass, then calls Cosmos to generate copy from the intent plus the latest usable PayPal.com context.
+7. The page displays the generated copy in two editable fields: Title and Body.
+8. The phone preview on the right updates live from the Title and Body fields.
+9. Decide whether to add A/B copy variants. If you click **Yes**, Cosmos generates two additional Title/Body variants from the current editable copy.
+10. Continue to audience, then click **Find RPS segment** when you want the RPS Search agent to run.
+11. The page calls `POST /api/audience`, then displays one selected RPS Segment ID and RPS details. Alternative audiences are not shown in the demo UI.
+12. Paste your own deeplink or click **Find deeplink** when you want the Deeplink Catalog Search agent to run.
+13. The page calls `POST /api/deeplinks`, then displays the selected deeplink URL and two catalog-backed destination cards.
+14. Click **Build upload JSON** to create a PStudio upload package from `resources/reference_campaign.json`.
+15. The JSON package keeps the reference campaign hard-coded and replaces only the push title, body, and deeplink.
 
-After the first workflow run:
+After copy generation:
 
 - Click **Regenerate copy text** to call Cosmos again using the same declared intent.
 - Edit the generated Title or Body directly; the phone notification preview updates as you type.
+- Click **Yes** in the copy step to generate A/B testing variants for copy only, or continue without variants.
+- Click **Find RPS segment** to search RPS when you are ready.
 - Paste a different Dynamic Segment ID into the RPS Segment ID box to refresh the details.
-- Click either suggested audience card to use that segment instead.
-- Click **Yes** in Section 5 to generate A/B testing variants for copy only.
+- Paste your own deeplink, or click **Find deeplink** to refresh the top two deeplink candidates from the current intent and copy.
+- Click **Build upload JSON** after copy and deeplink are set.
 
 ## Local API
 
@@ -152,10 +168,12 @@ The browser calls these local endpoints:
 
 ```text
 GET  /api/health
-POST /api/demo
 POST /api/copy
+POST /api/audience
 POST /api/segment
+POST /api/deeplinks
 POST /api/variants
+POST /api/package
 ```
 
 Health check:
@@ -164,20 +182,18 @@ Health check:
 curl http://127.0.0.1:8000/api/health
 ```
 
-Manual demo request:
+Generate or regenerate copy only:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/demo \
+curl -X POST http://127.0.0.1:8000/api/copy \
   -H "Content-Type: application/json" \
   -d '{"intent":"Create a push notification for users not enrolled in PayPal One Card"}'
 ```
 
-`POST /api/demo` returns generated copy, the recommended RPS Dynamic Segment, and two suggested Dynamic Segment alternatives from targeted RPS search results.
-
-Regenerate copy only:
+Find RPS audience candidates:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/copy \
+curl -X POST http://127.0.0.1:8000/api/audience \
   -H "Content-Type: application/json" \
   -d '{"intent":"Create a push notification for users not enrolled in PayPal One Card"}'
 ```
@@ -190,6 +206,14 @@ curl -X POST http://127.0.0.1:8000/api/segment \
   -d '{"segment_id":"DS-7637634650901768635"}'
 ```
 
+Refresh deeplink candidates only:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/deeplinks \
+  -H "Content-Type: application/json" \
+  -d '{"intent":"Create a push notification nudging users to pay someone from the PayPal app","title":"Pay someone in seconds","body":"Send money from your PayPal app."}'
+```
+
 Generate two additional A/B copy variants:
 
 ```bash
@@ -198,15 +222,33 @@ curl -X POST http://127.0.0.1:8000/api/variants \
   -d '{"intent":"Create a push notification for PayPal Debit Card enrollment","title":"You are eligible for the PayPal Debit Card","body":"Use your PayPal balance anywhere and earn cash back on everyday purchases."}'
 ```
 
-`POST /api/demo` returns:
+Build a demo upload package from the hard-coded reference campaign:
 
-- `copy`: generated push notification copy
+```bash
+curl -X POST http://127.0.0.1:8000/api/package \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Pay later today","body":"Split eligible purchases at checkout.","deeplink":"https://www.paypal.com/myaccount/paylater"}'
+```
+
+`POST /api/audience` returns:
+
 - `selected_audience`: the top RPS Dynamic Segment
-- `suggested_audiences`: the next two Dynamic Segment options
+- `suggested_audiences`: additional Dynamic Segment options for API consumers; the demo UI hides them
 
 `POST /api/variants` returns:
 
 - `variants`: two generated push notification copy variants with `title` and `body` only
+
+`POST /api/deeplinks` returns:
+
+- `selected_deeplink`: the top Oslo catalog destination
+- `suggested_deeplinks`: the alternate destination
+- `deeplink_options`: both returned deeplink candidates
+
+`POST /api/package` returns:
+
+- `package`: the reference campaign JSON with only `title`, `body`, and `deep_link` replaced
+- `updated_fields`: the three fields inserted into the hard-coded package
 
 ## Test And Verify
 
@@ -237,8 +279,10 @@ The automated tests do not need the local server to be running. They test the Py
 For a full manual smoke test:
 
 1. Start the server with `make run`.
-2. Open the browser URL and run the demo once.
-3. Optional: in a second terminal, call `/api/health` or `/api/demo` with `curl`.
+2. Open the browser URL and generate copy once.
+3. Generate or skip variants, then click **Find RPS segment** and **Find deeplink** to run those agents separately.
+4. Click **Build upload JSON** and confirm the package contains the current title, body, and deeplink.
+5. Optional: in a second terminal, call `/api/health`, `/api/copy`, `/api/audience`, `/api/deeplinks`, or `/api/package` with `curl`.
 
 ## Troubleshooting
 
@@ -262,10 +306,13 @@ curl http://127.0.0.1:8000/api/health
 The health response from the fixed server should include:
 
 ```json
-{"server_version":"push-enrollment-paypal-logo-v5","max_tokens":1200}
+{"server_version":"transcript-demo-v15","max_tokens":1200}
 ```
 
 If RPS fails, confirm VPN/network access to the QA host.
+
+If deeplink search fails, confirm VPN/network access to the Oslo hub catalog host and verify the
+`DEEPLINK_CATALOG_URL` / `DEEPLINK_CATALOG_DATA_URL` values in `.env`.
 
 If `.venv/bin/python` is missing or broken, recreate the virtual environment:
 
@@ -278,10 +325,12 @@ make install
 
 Current flow:
 
-1. User enters intent in the local browser UI.
+1. User enters campaign context in the local browser UI.
 2. Local server generates draft copy through the shared Cosmos AI OpenAI-compatible chat completions endpoint.
-3. Browser renders the copy in editable Title and Body fields and mirrors them in the phone preview.
-4. Local server searches RPS dynamic segments and returns the top match plus two suggested alternatives.
+3. Browser renders the copy in editable Title and Body fields, mirrors them in the phone preview, and can generate two copy variants.
+4. User clicks **Find RPS segment**; the local server searches RPS dynamic segments and returns the top match.
 5. User can paste a Dynamic Segment ID, and the local server refreshes details from RPS.
+6. User clicks **Find deeplink**; the local server searches the Oslo catalog and returns the top two registered app destinations.
+7. User clicks **Build upload JSON**; the local server reads `resources/reference_campaign.json` and replaces only the push title, body, and deeplink.
 
 Keep future integrations behind the flow helpers in `src/oslo_comms_studio/app.py`.

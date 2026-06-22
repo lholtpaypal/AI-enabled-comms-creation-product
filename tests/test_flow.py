@@ -1,16 +1,27 @@
 from oslo_comms_studio.app import (
     CopyDraft,
     CosmosLlmError,
+    build_paypal_value_prop_search_queries,
     build_search_terms,
     choose_top_dynamic_segment,
+    copy_generation_messages,
+    extract_deeplink_catalog_data,
     find_dynamic_segment_record,
     generate_copy,
     generate_copy_variants,
     parse_copy_response,
     parse_copy_variants_response,
     parse_rps_search_plan,
+    paypal_value_prop_context,
+    rank_deeplink_options,
     rank_dynamic_segment_options,
     search_audience_options,
+    search_deeplink_options,
+)
+from oslo_comms_studio.server import (
+    build_demo_campaign_package,
+    build_demo_campaign_patch_payload,
+    patch_demo_campaign,
 )
 
 
@@ -59,6 +70,7 @@ def test_generate_copy_calls_cosmos(monkeypatch) -> None:
         return Response()
 
     monkeypatch.setenv("COSMOS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr("oslo_comms_studio.app.PAYPAL_VALUE_PROP_SEARCH_ENABLED", False)
     monkeypatch.setattr("oslo_comms_studio.app.requests.post", fake_post)
 
     draft = generate_copy("Create a push notification for PayPal One Card signups")
@@ -70,6 +82,72 @@ def test_generate_copy_calls_cosmos(monkeypatch) -> None:
     assert "max_tokens" not in calls["kwargs"]["json"]
     assert "temperature" not in calls["kwargs"]["json"]
     assert calls["kwargs"]["headers"]["Authorization"] == "Bearer test-key"
+
+
+def test_copy_prompt_includes_paypal_value_prop_context(monkeypatch) -> None:
+    monkeypatch.setattr("oslo_comms_studio.app.PAYPAL_VALUE_PROP_SEARCH_ENABLED", False)
+    intent = "Create a push notification for PayPal Debit Card enrollment"
+    context = paypal_value_prop_context(intent)
+    messages = copy_generation_messages(intent)
+
+    assert "5% cash back" in context
+    assert "PayPal.com product value-prop pass from web search agents" in messages[1]["content"]
+    assert "5% cash back" in messages[1]["content"]
+
+
+def test_paypal_value_prop_context_uses_live_paypal_sources(monkeypatch) -> None:
+    class Response:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def raise_for_status(self) -> None:
+            return None
+
+    search_html = """
+    <a class="result__a" href="https://www.paypal.com/us/digital-wallet/manage-money/paypal-debit-card">
+      PayPal Debit Card
+    </a>
+    <div class="result__snippet">
+      Use the PayPal Debit Card anywhere Mastercard is accepted.
+    </div>
+    """
+    page_html = """
+    <html>
+      <head>
+        <title>PayPal Debit Card</title>
+        <meta name="description" content="Earn cash back with the PayPal Debit Card.">
+      </head>
+      <body>
+        <h1>Earn cash back with your PayPal Debit Card</h1>
+        <p>Choose one monthly category and earn cash back on eligible purchases.</p>
+      </body>
+    </html>
+    """
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url == "https://html.duckduckgo.com/html/":
+            return Response(search_html)
+        return Response(page_html)
+
+    monkeypatch.setattr("oslo_comms_studio.app.requests.get", fake_get)
+
+    context = paypal_value_prop_context("Create a push notification for PayPal Debit Card")
+
+    assert "Live PayPal.com web-search-agent context" in context
+    assert "https://www.paypal.com/us/digital-wallet/manage-money/paypal-debit-card" in context
+    assert "monthly category" in context
+    assert calls[0][1]["params"]["q"].startswith("site:paypal.com/us")
+
+
+def test_build_paypal_value_prop_search_queries_uses_product_terms() -> None:
+    queries = build_paypal_value_prop_search_queries(
+        "Create a push notification for PayPal Pay Later"
+    )
+
+    assert any("PayPal Pay Later" in query for query in queries)
+    assert all(query.startswith("site:paypal.com/us") for query in queries)
 
 
 def test_generate_copy_retries_empty_cosmos_content(monkeypatch) -> None:
@@ -94,6 +172,7 @@ def test_generate_copy_retries_empty_cosmos_content(monkeypatch) -> None:
         return responses.pop(0)
 
     monkeypatch.setenv("COSMOS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr("oslo_comms_studio.app.PAYPAL_VALUE_PROP_SEARCH_ENABLED", False)
     monkeypatch.setattr("oslo_comms_studio.app.requests.post", fake_post)
 
     draft = generate_copy("Create a push notification for PayPal One Card signups")
@@ -144,6 +223,7 @@ def test_generate_copy_variants_calls_cosmos(monkeypatch) -> None:
         return Response()
 
     monkeypatch.setenv("COSMOS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr("oslo_comms_studio.app.PAYPAL_VALUE_PROP_SEARCH_ENABLED", False)
     monkeypatch.setattr("oslo_comms_studio.app.requests.post", fake_post)
 
     variants = generate_copy_variants(
@@ -155,6 +235,93 @@ def test_generate_copy_variants_calls_cosmos(monkeypatch) -> None:
     assert variants[0].title == "Debit card perks"
     assert calls["kwargs"]["json"]["response_format"] == {"type": "json_object"}
     assert "variants" in calls["kwargs"]["json"]["messages"][0]["content"]
+
+
+def test_build_demo_campaign_package_only_updates_content_fields() -> None:
+    package = build_demo_campaign_package(
+        title="Pay later today",
+        body="Split eligible purchases at checkout.",
+        deeplink="https://www.paypal.com/myaccount/paylater",
+    )
+
+    content = package["channel_details"][0]["content"][0]["content_payload"]
+    assert content["localizable_content"]["en-US"]["title"] == "Pay later today"
+    assert (
+        content["localizable_content"]["en-US"]["body"] == "Split eligible purchases at checkout."
+    )
+    assert (
+        content["non_localizable_content"]["deep_link"]
+        == "https://www.paypal.com/myaccount/paylater"
+    )
+    assert (
+        package["delivery_config"]["target_config"]["dynamic_segment"]["groups"][0][
+            "include_segments"
+        ][0]["segment_id"]
+        == "DS-6892159868302557433"
+    )
+
+
+def test_build_demo_campaign_patch_payload_only_updates_copy_deeplink_and_segment() -> None:
+    campaign_id, payload = build_demo_campaign_patch_payload(
+        title="Yeah, it worked!",
+        body="This came from the demo.",
+        deeplink="https://www.paypal.com/mobile-app/paylater/pay-later-hub",
+        segment_id="DS-123",
+        segment_code="SEGMENT_CODE_123",
+    )
+
+    assert campaign_id == "9855711573"
+    assert payload["delivery_type"] == "SCHEDULED_BULK"
+    include_segment = payload["delivery_config"]["target_config"]["dynamic_segment"]["groups"][0][
+        "include_segments"
+    ][0]
+    assert include_segment == {
+        "segment_id": "DS-123",
+        "segment_code": "SEGMENT_CODE_123",
+    }
+
+    content_payload = payload["channel_details"][0]["content"][0]["content_payload"]
+    assert content_payload["localizable_content"]["en-US"] == {
+        "body": "This came from the demo.",
+        "title": "Yeah, it worked!",
+    }
+    assert (
+        content_payload["non_localizable_content"]["deep_link"]
+        == "https://www.paypal.com/mobile-app/paylater/pay-later-hub"
+    )
+    assert payload["channel_details"][0]["channel_rules"]["preference"] == "GENERAL_MARKETING"
+    assert "status" not in payload["channel_details"][0]["content"][0]
+
+
+def test_patch_demo_campaign_calls_campaign_management(monkeypatch) -> None:
+    class Response:
+        text = '{"campaign_id":"9855711573"}'
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"campaign_id": "9855711573"}
+
+    calls = {}
+
+    def fake_patch(url, **kwargs):
+        calls["url"] = url
+        calls["kwargs"] = kwargs
+        return Response()
+
+    monkeypatch.setattr("oslo_comms_studio.server.requests.patch", fake_patch)
+
+    result = patch_demo_campaign("9855711573", {"channel_details": []})
+
+    assert result == {"campaign_id": "9855711573"}
+    assert calls["url"].endswith("/9855711573")
+    assert calls["kwargs"]["json"] == {"channel_details": []}
+    assert calls["kwargs"]["headers"]["Content-Type"] == "application/json"
+    assert calls["kwargs"]["headers"]["USER_DETAILS"] == (
+        '{"LOGGED_IN_USER":"lholt","USER_ROLES":["PP_SSO_COMMS_ADMIN"]}'
+    )
+    assert calls["kwargs"]["verify"] is False
 
 
 def test_build_search_terms_expands_debit_card_synonyms() -> None:
@@ -235,6 +402,109 @@ def test_find_dynamic_segment_record_accepts_id_or_code() -> None:
 
     assert by_id == segments[0]
     assert by_code == segments[0]
+
+
+def test_extract_deeplink_catalog_data_from_generated_js() -> None:
+    catalog = extract_deeplink_catalog_data(
+        """
+        const _EXTERNAL_DATA = {
+          "meta": {"totalPaths": 1},
+          "modules": [
+            {"module": "P2P", "links": [{"path": "/myaccount/transfer/homepage/pay"}]}
+          ]
+        };
+        """
+    )
+
+    assert catalog["modules"][0]["module"] == "P2P"
+    assert catalog["modules"][0]["links"][0]["path"] == "/myaccount/transfer/homepage/pay"
+
+
+def test_rank_deeplink_options_prefers_p2p_pay_homepage() -> None:
+    records = [
+        {
+            "module": "Home",
+            "path": "/mobile-app/dashboard",
+            "dest": "DashboardDestination",
+            "fullClass": "com.paypal.home.DashboardDestination",
+            "type": "Cross-Platform",
+            "params": [],
+            "adb": (
+                "adb shell am start -W -a android.intent.action.VIEW -d "
+                '"https://www.paypal.com/mobile-app/dashboard" com.paypal.android.p2pmobile'
+            ),
+        },
+        {
+            "module": "P2P",
+            "path": "/myaccount/transfer/homepage/pay",
+            "dest": "SendTransferDestination",
+            "fullClass": "com.paypal.oslo.feature.p2p.api.navigation.SendTransferDestination",
+            "type": "App-Only",
+            "params": [],
+            "adb": (
+                "adb shell am start -W -a android.intent.action.VIEW -d "
+                '"https://www.paypal.com/myaccount/transfer/homepage/pay" '
+                "com.paypal.android.p2pmobile"
+            ),
+        },
+    ]
+
+    options = rank_deeplink_options(
+        records,
+        "Create a push notification nudging users to pay someone in the PayPal app.",
+        limit=2,
+    )
+
+    assert options[0].recommendation.path == "/myaccount/transfer/homepage/pay"
+    assert options[0].recommendation.url == "https://www.paypal.com/myaccount/transfer/homepage/pay"
+    assert options[0].recommendation.required_params == []
+
+
+def test_search_deeplink_options_uses_catalog_without_llm(monkeypatch) -> None:
+    catalog = {
+        "modules": [
+            {
+                "module": "Savings",
+                "links": [
+                    {
+                        "path": "/myaccount/savings",
+                        "dest": "SavingsDlHubDestination",
+                        "fullClass": "com.paypal.oslo.feature.savings.api.navigation.SavingsDlHubDestination",
+                        "type": "Cross-Platform",
+                        "params": [],
+                        "adb": (
+                            "adb shell am start -W -a android.intent.action.VIEW -d "
+                            '"https://www.paypal.com/myaccount/savings" '
+                            "com.paypal.android.p2pmobile"
+                        ),
+                    },
+                    {
+                        "path": "/myaccount/savings/add-money",
+                        "dest": "SavingsDlAddMoneyDestination",
+                        "fullClass": "com.paypal.oslo.feature.savings.api.navigation.SavingsDlAddMoneyDestination",
+                        "type": "Cross-Platform",
+                        "params": [],
+                        "adb": (
+                            "adb shell am start -W -a android.intent.action.VIEW -d "
+                            '"https://www.paypal.com/myaccount/savings/add-money" '
+                            "com.paypal.android.p2pmobile"
+                        ),
+                    },
+                ],
+            }
+        ]
+    }
+
+    monkeypatch.setenv("COSMOS_LLM_API_KEY", "")
+    monkeypatch.setattr("oslo_comms_studio.app.fetch_deeplink_catalog", lambda: catalog)
+
+    options = search_deeplink_options(
+        "Create a push notification asking savings users to add money.",
+        limit=2,
+    )
+
+    assert options[0].recommendation.path == "/myaccount/savings/add-money"
+    assert len(options) == 2
 
 
 def test_parse_rps_search_plan_accepts_safe_segment_search() -> None:
