@@ -94,6 +94,10 @@ INDEX_HTML = """
       box-sizing: border-box;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -1850,9 +1854,9 @@ INDEX_HTML = """
         setVariantControlsEnabled(true);
         clearVariants("Ready: choose Yes to create variants from your current editable copy.");
         setBadge(variantsBadge, "Ready");
-        conceal(audienceStep);
         resetAudienceSearch();
         resetDeeplinkSearch();
+        reveal(audienceStep);
         setGuide("Step 2 of 4", "Select your copy", "Edit the title and body, then add variants or continue to audience.");
         focusStep(copyPanel);
       } catch (error) {
@@ -1886,9 +1890,9 @@ INDEX_HTML = """
         setBadge(copyBadge, "Generated", "ok");
         clearVariants("Copy changed. Choose Yes again when you want variants based on the new copy.");
         setBadge(variantsBadge, "Ready");
-        conceal(audienceStep);
         resetAudienceSearch();
         resetDeeplinkSearch();
+        reveal(audienceStep);
         setGuide("Step 2 of 4", "Review your revised copy", "Because your copy changed, continue through audience and deeplink again when you are ready.");
         focusStep(copyPanel);
       } catch (error) {

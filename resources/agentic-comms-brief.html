@@ -148,21 +148,16 @@
   .bi p{font-size:13.5px;line-height:1.5;color:#d4dffb}
   .foot-note{margin-top:24px;font-family:var(--mono);font-size:11px;color:#a9c0f5;letter-spacing:.02em;line-height:1.5}
 
-  /* where this goes + seed */
-  .plan{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(24px,3vw,40px);align-items:start}
-  .lede{font-size:16px;line-height:1.6;color:var(--ink);max-width:54ch;margin-bottom:22px}
+  /* where this goes */
+  .plan{display:block}
+  .lede{font-size:16px;line-height:1.6;color:var(--ink);max-width:72ch;margin-bottom:26px}
   .lede b{font-weight:600}
-  .plan ol{list-style:none;counter-reset:s;padding:0;margin:0}
-  .plan ol li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line-soft)}
-  .plan ol li:first-child{border-top:0}
+  .plan ol{list-style:none;counter-reset:s;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:0 clamp(28px,4vw,56px)}
+  .plan ol li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:14px;padding:15px 0;border-top:1px solid var(--line-soft)}
+  .plan ol li:first-child,.plan ol li:nth-child(2){border-top:0}
   .plan ol li::before{content:counter(s);font-family:var(--mono);font-weight:600;font-size:13px;color:var(--blue);padding-top:1px}
   .plan ol li p{font-size:14.5px;line-height:1.5}
   .plan ol li p b{font-weight:600}
-  .seed{border:1.5px solid var(--ink);background:var(--ink);color:#fff;padding:clamp(24px,3vw,30px);position:sticky;top:16px}
-  .seed .lab{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#9fb6f0}
-  .seed h3{font-size:clamp(19px,2.2vw,24px);font-weight:600;letter-spacing:-.01em;line-height:1.18;margin:12px 0 14px}
-  .seed p{font-size:14px;line-height:1.55;color:#d7ddea}
-  .seed .closing{margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.22);font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;color:#bcd0ff;text-transform:uppercase}
 
   .colophon{padding:22px 0 40px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
   .colophon span{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink-soft);text-transform:uppercase}
@@ -184,8 +179,8 @@
     .becomes{flex-direction:row;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0;padding:8px}
     .agents{grid-template-columns:repeat(2,1fr)}
     .nums,.bi-grid{grid-template-columns:1fr}
-    .plan{grid-template-columns:1fr}
-    .seed{position:static}
+    .plan ol{grid-template-columns:1fr}
+    .plan ol li:nth-child(2){border-top:1px solid var(--line-soft)}
   }
   @media (max-width:560px){
     .truths{grid-template-columns:1fr}
@@ -199,7 +194,7 @@
     body{background-attachment:scroll}
   }
   @media print{
-    body{background:#fff}body::before{display:none}.seed{position:static}
+    body{background:#fff}body::before{display:none}
     .step,.band{break-inside:avoid}
     .band{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   }
@@ -251,7 +246,6 @@
       <article class="truth"><div class="k">1</div><p>The context to build a campaign is <b>scattered across the enterprise</b> — more teams, more handoffs to pull it together.</p></article>
       <article class="truth"><div class="k">2</div><p>Every step is the same motion: a fresh person retrieves context and enters it — <b>copy, audience, deep link, experiment</b>. The shape repeats.</p></article>
       <article class="truth"><div class="k">3</div><p>Teaching a person is bespoke onboarding, repeated for every person, team, and campaign. <b>It never compounds.</b></p></article>
-      <article class="truth"><div class="k">4</div><p>The result: only about <b>3% of ideas</b> make it through — and the ones that ship often lose their personalization on the way.</p></article>
     </div>
 
     <figure class="figure-card reveal" aria-label="Today's workflow versus the agent workflow">
@@ -361,23 +355,17 @@
   <section class="step" style="border-top:0">
     <div class="step-head">
       <span class="eyebrow">Where this goes</span>
-      <h2>Saturation is a good problem &#8212; and the next thing to plan for.</h2>
+      <h2>Saturation is a good problem &#8212; and a three-month build away.</h2>
     </div>
     <div class="plan">
-      <div>
-        <p class="lede">Going from too few comms to almost too many is the goal. But at volume, the hard question changes from <b>&ldquo;can we make it?&rdquo;</b> to <b>&ldquo;which message, to whom, when?&rdquo;</b> &mdash; a problem intelligence solves, not headcount. Here's how we get there:</p>
-        <ol class="reveal" aria-label="Plan">
-          <li><p><b>Set guardrails and benchmarks per agent.</b> Measure each before we trust it &#8212; nothing ships ahead of the data.</p></li>
-          <li><p><b>Right-size the model.</b> Start with the most capable, work back to the cheapest that clears the bar.</p></li>
-          <li><p><b>Keep a person in the loop through launch.</b> People own strategy and edge cases; agents do the data movement.</p></li>
-          <li><p><b>Flip from pull to push.</b> Use data to find under-served markets, build the package, and bring it for one-click approve or edit.</p></li>
-        </ol>
-      </div>
-      <aside class="seed reveal">
-        <div class="lab">Where we'll need help</div>
-        <h3>Resourcing the intelligence layer.</h3>
-        <p>The workflow gets us to volume fast; staying ahead of it &#8212; what to send, to whom, and when &#8212; is what the intelligence layer is for, and the next thing we'll need to staff.</p>
-      </aside>
+      <p class="lede">Going from too few comms to almost too many is the goal &#8212; and from here it&#8217;s mostly engineering. It starts with an <b>MCP server</b>: one hub that exposes PayPal&#8217;s systems &#8212; RPS audiences, the Oslo deep-link catalog, StatSig &#8212; as tools every agent can call. From there:</p>
+      <ol class="reveal" aria-label="Three-month plan">
+        <li><p><b>Set guardrails and benchmarks per agent.</b> Measure each before we trust it &#8212; nothing ships ahead of the data.</p></li>
+        <li><p><b>Right-size the model.</b> Start with the most capable, work back to the cheapest that clears the bar.</p></li>
+        <li><p><b>Expand what the agents can build.</b> Today they find existing RPS audiences; next they create new ones from existing attributes, then combine segments and configure deep links.</p></li>
+        <li><p><b>Keep a person in the loop through launch.</b> People own strategy and edge cases; agents do the data movement.</p></li>
+        <li><p><b>Flip from pull to push.</b> Use data to find under-served markets, build the package, and bring it for one-click approve or edit.</p></li>
+      </ol>
     </div>
   </section>
 </div>
