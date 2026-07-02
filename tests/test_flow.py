@@ -19,9 +19,9 @@ from oslo_comms_studio.app import (
     search_deeplink_options,
 )
 from oslo_comms_studio.server import (
+    build_demo_campaign_create_payload,
     build_demo_campaign_package,
-    build_demo_campaign_patch_payload,
-    patch_demo_campaign,
+    post_demo_campaign,
 )
 
 
@@ -261,8 +261,8 @@ def test_build_demo_campaign_package_only_updates_content_fields() -> None:
     )
 
 
-def test_build_demo_campaign_patch_payload_only_updates_copy_deeplink_and_segment() -> None:
-    campaign_id, payload = build_demo_campaign_patch_payload(
+def test_build_demo_campaign_create_payload_creates_new_draft_campaign() -> None:
+    campaign_name, payload = build_demo_campaign_create_payload(
         title="Yeah, it worked!",
         body="This came from the demo.",
         deeplink="https://www.paypal.com/mobile-app/paylater/pay-later-hub",
@@ -270,8 +270,19 @@ def test_build_demo_campaign_patch_payload_only_updates_copy_deeplink_and_segmen
         segment_code="SEGMENT_CODE_123",
     )
 
-    assert campaign_id == "9855711573"
+    assert campaign_name.startswith("agentic_comms_post_")
+    assert payload["campaign_name"] == campaign_name
+    assert payload["status"] == "DRAFT"
+    assert payload["owners"] == ["lholt"]
+    assert payload["team_dls"] == ["lholt@paypal.com"]
     assert payload["delivery_type"] == "SCHEDULED_BULK"
+    assert payload["channels"] == [1002]
+    assert "campaign_id" not in payload
+    assert "campaign_ref_id" not in payload
+    assert "version" not in payload
+    assert "created_by" not in payload
+    assert "time_created_ms" not in payload
+    assert payload["delivery_config"]["schedule"]["timezone"] == "America/Chicago"
     include_segment = payload["delivery_config"]["target_config"]["dynamic_segment"]["groups"][0][
         "include_segments"
     ][0]
@@ -290,32 +301,38 @@ def test_build_demo_campaign_patch_payload_only_updates_copy_deeplink_and_segmen
         == "https://www.paypal.com/mobile-app/paylater/pay-later-hub"
     )
     assert payload["channel_details"][0]["channel_rules"]["preference"] == "GENERAL_MARKETING"
-    assert "status" not in payload["channel_details"][0]["content"][0]
+    assert payload["channel_details"][0]["status"] == "ACTIVE"
+    assert "created_by" not in payload["channel_details"][0]
+    content = payload["channel_details"][0]["content"][0]
+    assert content["status"] == "ACTIVE"
+    assert content["content_legal_review_exception"] is True
+    assert "content_id" not in content
+    assert "created_by" not in content
 
 
-def test_patch_demo_campaign_calls_campaign_management(monkeypatch) -> None:
+def test_post_demo_campaign_calls_campaign_management(monkeypatch) -> None:
     class Response:
-        text = '{"campaign_id":"9855711573"}'
+        text = '{"campaign_id":"4076525877"}'
 
         def raise_for_status(self) -> None:
             return None
 
         def json(self) -> dict:
-            return {"campaign_id": "9855711573"}
+            return {"campaign_id": "4076525877"}
 
     calls = {}
 
-    def fake_patch(url, **kwargs):
+    def fake_post(url, **kwargs):
         calls["url"] = url
         calls["kwargs"] = kwargs
         return Response()
 
-    monkeypatch.setattr("oslo_comms_studio.server.requests.patch", fake_patch)
+    monkeypatch.setattr("oslo_comms_studio.server.requests.post", fake_post)
 
-    result = patch_demo_campaign("9855711573", {"channel_details": []})
+    result = post_demo_campaign({"channel_details": []})
 
-    assert result == {"campaign_id": "9855711573"}
-    assert calls["url"].endswith("/9855711573")
+    assert result == {"campaign_id": "4076525877"}
+    assert calls["url"].endswith("/v1/communications/campaign")
     assert calls["kwargs"]["json"] == {"channel_details": []}
     assert calls["kwargs"]["headers"]["Content-Type"] == "application/json"
     assert calls["kwargs"]["headers"]["USER_DETAILS"] == (

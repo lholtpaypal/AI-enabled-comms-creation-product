@@ -7,7 +7,7 @@ description: Draft copy for PayPal app notifications (Push, Notification Center,
 
 ## Overview
 This skill helps PayPal teams draft and refine **notification copy** for the three app
-communication channels and for **NBA (Next Best Action) home recommendation tiles**, using
+communication channels including the **NBA (Next Best Action) home recommendation tiles**, using
 the Oslo App Communications Playbook. It enforces what we say, how we say it, and where the
 message lands, so copy clears legal and meets engagement thresholds.
 
@@ -27,7 +27,6 @@ message lands, so copy clears legal and meets engagement thresholds.
 |---|---|---|
 | Push | Lock-screen / system notification | Highest performing; use selectively. |
 | Notification Center (NC) | In-app bell-icon message | Drives everyday engagement. |
-| Text / SMS | Outbound text | Has its own writing guidelines and examples. |
 | NBA home tile | Personalized recommendation card on Home Feed | Static content via PIE (go/pie). |
 
 **Source:** App Communications deck (PayPal App Notifications PDF), "Define the experience"
@@ -59,7 +58,7 @@ From the playbook's "1. Define the experience":
   in the near term. **~99% of messages will not qualify.**
 - NC icon/image: use **PDS standard icon components** or upload an image directly.
 
-## Character limits — [SME TO CONFIRM]
+## Character limits
 The project files reference Push / In-App / Text "Writing guidelines" pages but the exact
 title and body character limits are **not legible in the provided materials.**
 

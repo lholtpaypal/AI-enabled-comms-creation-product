@@ -4,12 +4,13 @@ import argparse
 import json
 import os
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import quote, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import urllib3
@@ -45,15 +46,21 @@ CAMPAIGN_MANAGEMENT_BASE_URL = os.getenv(
     "CAMPAIGN_MANAGEMENT_BASE_URL",
     "https://te-campaign-management-3.qa.paypal.com:16223/v1/communications/campaign",
 ).rstrip("/")
-CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS = float(
-    os.getenv("CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS", "45")
-)
+CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS = float(os.getenv("CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS", "45"))
 CAMPAIGN_MANAGEMENT_USER_DETAILS = os.getenv(
     "CAMPAIGN_MANAGEMENT_USER_DETAILS",
     json.dumps(
         {"LOGGED_IN_USER": "lholt", "USER_ROLES": ["PP_SSO_COMMS_ADMIN"]},
         separators=(",", ":"),
     ),
+)
+CAMPAIGN_MANAGEMENT_CAMPAIGN_NAME_PREFIX = os.getenv(
+    "CAMPAIGN_MANAGEMENT_CAMPAIGN_NAME_PREFIX",
+    "agentic_comms_post",
+)
+CAMPAIGN_MANAGEMENT_SCHEDULE_TIMEZONE = os.getenv(
+    "CAMPAIGN_MANAGEMENT_SCHEDULE_TIMEZONE",
+    "America/Chicago",
 )
 LAST_WORKFLOW_RESPONSE: dict[str, Any] | None = None
 PAYPAL_LOGO_SVG = """
@@ -1348,12 +1355,12 @@ INDEX_HTML = """
             <h2 class="panel-title">
               <span class="step-number">4</span>
               Create Campaign
-              <span class="help-tip" tabindex="0" aria-label="Create campaign help" data-tooltip="This PATCHes the QA campaign using the agentic_comms_test template. Only the push title, push body, deeplink, and selected RPS segment ID/code are replaced in the request body.">?</span>
+              <span class="help-tip" tabindex="0" aria-label="Create campaign help" data-tooltip="This creates a new QA campaign from the agentic_comms_test template. The reviewed push title, push body, deeplink, and selected RPS segment ID/code are inserted into a fresh draft campaign every time.">?</span>
             </h2>
             <span id="createCampaignBadge" class="badge">Waiting</span>
           </div>
           <div class="panel-body">
-            <p class="section-help">PATCH campaign 9855711573 in QA with the reviewed copy, deeplink, and selected RPS segment.</p>
+            <p class="section-help">POST a new QA campaign with the reviewed copy, deeplink, and selected RPS segment.</p>
             <div class="actions">
               <button id="createCampaignButton" class="primary" type="button">Create Campaign</button>
               <span id="createCampaignStatus" class="status">Waiting for generated title, body, deeplink, and selected RPS segment.</span>
@@ -1718,7 +1725,7 @@ INDEX_HTML = """
       resetCreateCampaign(false);
       reveal(packagePanel);
       resetPackage(false);
-      setGuide("Step 4 of 4", "Create the campaign", "PATCH the QA campaign with your reviewed copy, deeplink, and selected RPS segment.");
+      setGuide("Step 4 of 4", "Create the campaign", "POST a new QA campaign with your reviewed copy, deeplink, and selected RPS segment.");
       focusStep(createCampaignPanel);
     }
 
@@ -1981,7 +1988,7 @@ INDEX_HTML = """
       resetPackage(false);
       setBadge(deeplinkBadge, "Manual");
       deeplinkStatus.textContent = "Manual deeplink entered. You can still edit it before handoff.";
-      setGuide("Step 4 of 4", "Create the campaign", "PATCH the QA campaign with your reviewed copy, deeplink, and selected RPS segment.");
+      setGuide("Step 4 of 4", "Create the campaign", "POST a new QA campaign with your reviewed copy, deeplink, and selected RPS segment.");
     });
 
     searchDeeplinkButton.addEventListener("click", async () => {
@@ -2113,8 +2120,8 @@ INDEX_HTML = """
       }
 
       createCampaignButton.disabled = true;
-      createCampaignStatus.textContent = "Working: PATCHing campaign 9855711573 in QA.";
-      setBadge(createCampaignBadge, "PATCHing", "warn");
+      createCampaignStatus.textContent = "Working: creating a new QA campaign.";
+      setBadge(createCampaignBadge, "Creating", "warn");
       createCampaignResult.hidden = true;
       createCampaignResult.value = "";
       try {
@@ -2125,13 +2132,13 @@ INDEX_HTML = """
           segment_id: segment.segment_id,
           segment_code: segment.segment_code
         });
-        createCampaignStatus.textContent = `Done: campaign ${data.campaign_id || "9855711573"} was updated in QA.`;
+        createCampaignStatus.textContent = `Done: campaign ${data.campaign_id || data.campaign_name || "new draft"} was created in QA.`;
         setBadge(createCampaignBadge, "Created", "ok");
         createCampaignResult.value = JSON.stringify(data.response || data, null, 2);
         createCampaignResult.hidden = false;
       } catch (error) {
         const payload = error.payload || { error: error.message };
-        createCampaignStatus.textContent = payload.error || "Campaign PATCH failed.";
+        createCampaignStatus.textContent = payload.error || "Campaign create failed.";
         setBadge(createCampaignBadge, "Error", "error");
         createCampaignResult.value = JSON.stringify(payload, null, 2);
         createCampaignResult.hidden = false;
@@ -2543,7 +2550,7 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            campaign_id, patch_payload = build_demo_campaign_patch_payload(
+            campaign_name, create_payload = build_demo_campaign_create_payload(
                 title=title,
                 body=body,
                 deeplink=deeplink,
@@ -2554,39 +2561,51 @@ class LocalDemoHandler(BaseHTTPRequestHandler):
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 {
-                    "error": f"Could not build the campaign PATCH payload: {exc}",
+                    "error": f"Could not build the campaign POST payload: {exc}",
                     "hint": "Confirm resources/agentic_comms_test.json is present and still has PUSH content plus a Dynamic Segment target.",
                 },
             )
             return
 
         try:
-            response_payload = patch_demo_campaign(campaign_id, patch_payload)
+            response_payload = post_demo_campaign(create_payload)
         except RuntimeError as exc:
             self._send_json(
                 HTTPStatus.BAD_GATEWAY,
                 {
                     "error": str(exc),
                     "hint": "Confirm VPN/network access to the QA campaign-management host, then retry.",
-                    "campaign_id": campaign_id,
-                    "patch_payload": patch_payload,
+                    "campaign_name": campaign_name,
+                    "create_payload": create_payload,
                 },
             )
             return
 
+        created_campaign_id = (
+            response_payload.get("campaign_id") if isinstance(response_payload, dict) else None
+        )
+        created_campaign_ref_id = (
+            response_payload.get("campaign_ref_id") if isinstance(response_payload, dict) else None
+        )
+        returned_campaign_name = (
+            response_payload.get("campaign_name") if isinstance(response_payload, dict) else None
+        )
+
         self._send_json(
-            HTTPStatus.OK,
+            HTTPStatus.CREATED,
             {
-                "campaign_id": campaign_id,
+                "campaign_id": created_campaign_id,
+                "campaign_ref_id": created_campaign_ref_id,
+                "campaign_name": returned_campaign_name or campaign_name,
                 "source_template": str(AGENTIC_CAMPAIGN_PATH.relative_to(PROJECT_ROOT)),
-                "updated_fields": {
+                "created_fields": {
                     "title": title,
                     "body": body,
                     "deep_link": deeplink,
                     "segment_id": segment_id,
                     "segment_code": segment_code,
                 },
-                "patch_payload": patch_payload,
+                "create_payload": create_payload,
                 "response": response_payload,
             },
         )
@@ -2693,7 +2712,41 @@ def build_demo_campaign_package(title: str, body: str, deeplink: str) -> dict[st
     return package
 
 
-def build_demo_campaign_patch_payload(
+def campaign_management_logged_in_user() -> str:
+    try:
+        details = json.loads(CAMPAIGN_MANAGEMENT_USER_DETAILS)
+    except json.JSONDecodeError:
+        return "lholt"
+    if not isinstance(details, dict):
+        return "lholt"
+    user = str(details.get("LOGGED_IN_USER") or "").strip()
+    return user or "lholt"
+
+
+def campaign_management_campaign_name() -> str:
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+    return f"{CAMPAIGN_MANAGEMENT_CAMPAIGN_NAME_PREFIX}_{timestamp}"
+
+
+def campaign_management_bulk_schedule() -> dict[str, str]:
+    try:
+        timezone = ZoneInfo(CAMPAIGN_MANAGEMENT_SCHEDULE_TIMEZONE)
+        timezone_name = CAMPAIGN_MANAGEMENT_SCHEDULE_TIMEZONE
+    except ZoneInfoNotFoundError:
+        timezone = UTC
+        timezone_name = "UTC"
+
+    now = datetime.now(timezone)
+    start = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    end = (start + timedelta(days=180)).replace(hour=23, minute=59)
+    return {
+        "start_date_time": start.strftime("%Y-%m-%dT%H:%M"),
+        "end_date_time": end.strftime("%Y-%m-%dT%H:%M"),
+        "timezone": timezone_name,
+    }
+
+
+def build_demo_campaign_create_payload(
     title: str,
     body: str,
     deeplink: str,
@@ -2701,9 +2754,7 @@ def build_demo_campaign_patch_payload(
     segment_code: str,
 ) -> tuple[str, dict[str, Any]]:
     campaign = json.loads(AGENTIC_CAMPAIGN_PATH.read_text())
-    campaign_id = str(campaign.get("campaign_id") or "").strip()
-    if not campaign_id:
-        raise ValueError("agentic campaign template is missing campaign_id")
+    campaign_name = campaign_management_campaign_name()
 
     delivery_type = str(campaign.get("delivery_type") or "").strip()
     if not delivery_type:
@@ -2713,10 +2764,7 @@ def build_demo_campaign_patch_payload(
     if not isinstance(delivery_config, dict):
         raise ValueError("agentic campaign template is missing delivery_config")
 
-    dynamic_segment = (
-        delivery_config.get("target_config", {})
-        .get("dynamic_segment", {})
-    )
+    dynamic_segment = delivery_config.get("target_config", {}).get("dynamic_segment", {})
     groups = dynamic_segment.get("groups")
     if not isinstance(groups, list) or not groups:
         raise ValueError("delivery_config does not include Dynamic Segment groups")
@@ -2762,56 +2810,80 @@ def build_demo_campaign_patch_payload(
         raise ValueError("agentic PUSH content is missing non_localizable_content")
     non_localized["deep_link"] = deeplink
 
-    patch_content = {
+    create_content = {
         key: content[key]
         for key in (
-            "content_id",
             "content_name",
             "content_variant_code",
             "default_locale",
+            "content_rules",
+            "content_legal_review_id",
             "content_legal_review_exception",
             "content_legal_review_exception_reason",
         )
         if key in content
     }
-    patch_content["content_payload"] = content_payload
+    create_content["content_payload"] = content_payload
+    create_content.setdefault("content_legal_review_exception", True)
+    create_content.setdefault(
+        "content_legal_review_exception_reason",
+        "QA campaign created by Oslo Comms Studio.",
+    )
+    create_content["status"] = "ACTIVE"
 
-    patch_channel = {
+    create_channel = {
         key: push_channel[key]
         for key in ("channel_id", "channel_name", "channel_rules")
         if key in push_channel
     }
-    patch_channel["content"] = [patch_content]
+    create_channel["content"] = [create_content]
+    create_channel["status"] = "ACTIVE"
 
-    return campaign_id, {
+    if delivery_type == "SCHEDULED_BULK":
+        delivery_config["schedule"] = campaign_management_bulk_schedule()
+
+    user = campaign_management_logged_in_user()
+    create_payload = {
+        "campaign_name": campaign_name,
+        "description": "QA campaign created by Oslo Comms Studio.",
+        "tenant_id": campaign.get("tenant_id", 101),
+        "tenant_name": campaign.get("tenant_name", "PAYPAL"),
+        "status": "DRAFT",
+        "owners": [user],
+        "team_dls": [f"{user}@paypal.com"],
+        "campaign_product": campaign.get("campaign_product"),
+        "campaign_action": campaign.get("campaign_action"),
+        "countries": campaign.get("countries", []),
         "delivery_type": delivery_type,
         "delivery_config": delivery_config,
-        "channel_details": [patch_channel],
+        "channels": campaign.get("channels", [1002]),
+        "channel_details": [create_channel],
     }
+    return campaign_name, create_payload
 
 
-def patch_demo_campaign(campaign_id: str, patch_payload: dict[str, Any]) -> dict[str, Any]:
+def post_demo_campaign(create_payload: dict[str, Any]) -> dict[str, Any]:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    url = f"{CAMPAIGN_MANAGEMENT_BASE_URL}/{campaign_id}"
+    url = CAMPAIGN_MANAGEMENT_BASE_URL
     try:
-        response = requests.patch(
+        response = requests.post(
             url,
             headers={
                 "Content-Type": "application/json",
                 "USER_DETAILS": CAMPAIGN_MANAGEMENT_USER_DETAILS,
             },
-            json=patch_payload,
+            json=create_payload,
             timeout=CAMPAIGN_MANAGEMENT_TIMEOUT_SECONDS,
             verify=False,
         )
     except requests.RequestException as exc:
-        raise RuntimeError(f"PATCH {url} failed: {exc}") from exc
+        raise RuntimeError(f"POST {url} failed: {exc}") from exc
 
     detail = response.text.strip()
     try:
         response.raise_for_status()
     except requests.HTTPError as exc:
-        message = f"PATCH {url} failed: {exc}"
+        message = f"POST {url} failed: {exc}"
         if detail:
             message = f"{message} - {detail[:500]}"
         raise RuntimeError(message) from exc
