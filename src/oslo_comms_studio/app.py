@@ -1924,6 +1924,16 @@ def paypal_value_prop_context(intent: str) -> str:
     )
 
 
+PUSH_COPY_WRITING_GUIDELINES = (
+    "The title must be 35 characters or fewer, including spaces. Use it to establish "
+    "the point of the message or provide a compelling hook. A phrase is acceptable. "
+    "Avoid title punctuation and aim for one line. "
+    "The body must be 100 characters or fewer, including spaces and punctuation. "
+    "Use it to add context and encourage customer action. Punctuate the body. "
+    "Treat both character limits as hard maximums and rewrite instead of truncating words."
+)
+
+
 def copy_generation_messages(intent: str) -> list[dict[str, str]]:
     return [
         {
@@ -1932,6 +1942,7 @@ def copy_generation_messages(intent: str) -> list[dict[str, str]]:
                 "You generate PayPal customer communication copy for prototypes. "
                 "Return only valid JSON with exactly these string fields: title, body. "
                 "The copy should be concise, clear, and appropriate for a push notification. "
+                f"{PUSH_COPY_WRITING_GUIDELINES} "
                 "Before writing, use the supplied PayPal.com web-search-agent value-prop "
                 "context so the copy does not treat PayPal products as generic financial "
                 "products. "
@@ -1965,6 +1976,7 @@ def copy_variants_messages(
                 "Return only valid JSON with exactly one key: variants. "
                 "variants must be an array of objects with exactly these string fields: "
                 "title, body. Push notifications do not have a CTA. "
+                f"{PUSH_COPY_WRITING_GUIDELINES} "
                 "Use the supplied PayPal.com web-search-agent value-prop context when it "
                 "is relevant, and do not introduce unsupported product claims. "
                 "Do not include markdown, explanations, or extra keys."

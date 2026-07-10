@@ -5,6 +5,7 @@ from oslo_comms_studio.app import (
     build_search_terms,
     choose_top_dynamic_segment,
     copy_generation_messages,
+    copy_variants_messages,
     extract_deeplink_catalog_data,
     find_dynamic_segment_record,
     generate_copy,
@@ -82,6 +83,20 @@ def test_generate_copy_calls_cosmos(monkeypatch) -> None:
     assert "max_tokens" not in calls["kwargs"]["json"]
     assert "temperature" not in calls["kwargs"]["json"]
     assert calls["kwargs"]["headers"]["Authorization"] == "Bearer test-key"
+
+
+def test_copy_generation_prompt_includes_push_writing_guidelines() -> None:
+    control = CopyDraft(title="Save with PayPal", body="Open the app to get started.")
+    system_prompts = [
+        copy_generation_messages("Promote PayPal Savings")[0]["content"],
+        copy_variants_messages("Promote PayPal Savings", control)[0]["content"],
+    ]
+
+    for system_prompt in system_prompts:
+        assert "title must be 35 characters or fewer" in system_prompt
+        assert "body must be 100 characters or fewer" in system_prompt
+        assert "Avoid title punctuation" in system_prompt
+        assert "encourage customer action" in system_prompt
 
 
 def test_copy_prompt_includes_paypal_value_prop_context(monkeypatch) -> None:

@@ -59,11 +59,21 @@ From the playbook's "1. Define the experience":
 - NC icon/image: use **PDS standard icon components** or upload an image directly.
 
 ## Character limits
-The project files reference Push / In-App / Text "Writing guidelines" pages but the exact
-title and body character limits are **not legible in the provided materials.**
+For Push copy, count every character, including spaces and punctuation:
+- `title`: **35 characters or fewer**
+- `body`: **100 characters or fewer**
 
-> **Do not invent limits.**:
-> - Push — title: 60 · body: 130
+These are hard maximums. Rewrite copy that exceeds either limit; do not truncate words.
+
+### Push title guidance
+- Use the title to establish the point of the message or provide a compelling hook.
+- Phrases are acceptable; a complete sentence is not required.
+- Avoid punctuation.
+- Aim for a single line across working designs, recognizing that wrapping varies by device.
+
+### Push body guidance
+- Use the body to add context and encourage customer action.
+- Punctuate the body.
 
 ## NBA tile content schema
 When drafting an NBA tile, produce these fields (configured later in go/pie):
@@ -92,7 +102,7 @@ All new notifications run a **smoke test to 5k users** and must exceed threshold
 When the user asks for copy, return:
 1. The drafted field(s) for the channel (title, body, CTA, destination intent).
 2. The behavioral driver used and why it fits.
-3. A flag if any field is near/over a confirmed limit, or if limits are still unconfirmed.
+3. Character counts for each field and a flag if any field is near or over its confirmed limit.
 4. A reminder that copy must be **legally approved** before send (route to `legal-review-agent`).
 
 ---
